@@ -1,9 +1,9 @@
-/*===========================================================================*\
+﻿/*===========================================================================*\
   AFSelectSppRecords is a SQL stored procedure to create an intermediate
   SQL Server table containing a subset of records based on their spatial
   intersection with a given record in another table.
   
-  Copyright � 2012-2013, 2015 Andy Foy Consulting
+  Copyright © 2012-2013, 2015 Andy Foy Consulting
   
   This file is used by the 'DataExtractor' tool, versions of which are
   available for MapInfo and ArcGIS.
