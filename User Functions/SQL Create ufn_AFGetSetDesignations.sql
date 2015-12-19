@@ -1,4 +1,4 @@
-﻿USE [NBNData]
+﻿USE NBNData
 GO
 
 SET ANSI_NULLS OFF
@@ -25,11 +25,18 @@ GO
 
   Last revision information:
     $Revision: 1 $
-    $Date: 08/04/15 14:17 $
+    $Date: 08/04/15 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
-ALTER FUNCTION [dbo].[AFGetSetDesignations]
+
+-- Drop the user function if it already exists
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFGetSetDesignations')
+	DROP FUNCTION dbo.AFGetSetDesignations
+GO
+
+-- Create the user function
+CREATE FUNCTION [dbo].[AFGetSetDesignations]
 (
 	@Taxon_Designation_Set_Key	CHAR(16) = NULL,
 	@Output_Format				SMALLINT	-- 1. Short_Name
@@ -92,3 +99,5 @@ BEGIN
 	
 	RETURN	@ReturnValue
 END
+
+GO

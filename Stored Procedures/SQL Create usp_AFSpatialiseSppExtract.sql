@@ -22,7 +22,7 @@
   <http://www.gnu.org/licenses/>.
 \*===========================================================================*/
 
-USE [NBNData]
+USE NBNData
 GO
 
 SET ANSI_NULLS ON
@@ -49,6 +49,10 @@ GO
 					2 = Mid, 3 = Upper Right)
 
   Created:			Nov 2012
+
+ *****************  Version 5  *****************
+ Author: Andy Foy		Date: 19/12/2015
+ A. Adjust spatial index settings to maximise performance.
 
  *****************  Version 4  *****************
  Author: Andy Foy		Date: 21/09/2015
@@ -346,11 +350,11 @@ BEGIN
 		' WITH ( ' +
 		' BOUNDING_BOX = (XMIN=' + CAST(@X1 As varchar) + ', YMIN=' + CAST(@Y1 As varchar) + ', XMAX=' + CAST(@X2 AS varchar) + ', YMAX=' + CAST(@Y2 As varchar) + '),' +
 		' GRIDS = (' +
-			' LEVEL_1 = MEDIUM,' +
+			' LEVEL_1 = HIGH,' +
 			' LEVEL_2 = MEDIUM,' +
 			' LEVEL_3 = MEDIUM,' +
 			' LEVEL_4 = MEDIUM),' +
-		' CELLS_PER_OBJECT = 16' +
+		' CELLS_PER_OBJECT = 64' +
 		')'
 	EXEC (@sqlcommand)
 

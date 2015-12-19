@@ -1,7 +1,6 @@
-﻿USE [NBNData]
+﻿USE NBNData
 GO
 
-/****** Object:  Table [dbo].[Spatial_Tables]    Script Date: 29/11/2015 16:48:05 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -27,5 +26,3 @@ GO
 
 SET ANSI_PADDING OFF
 GO
-
-

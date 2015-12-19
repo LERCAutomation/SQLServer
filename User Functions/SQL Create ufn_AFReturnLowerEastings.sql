@@ -1,4 +1,4 @@
-﻿USE [NBNData]
+﻿USE NBNData
 GO
 
 SET ANSI_NULLS ON
