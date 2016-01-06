@@ -37,6 +37,7 @@ GO
   Parameters:
 	@Schema			The schema for the partner and species table.
 	@SpeciesTable	The name of the table contain the species records.
+	@ColumnNames	The list of columns to select from the species table.
 	@WhereClause	The SQL where clause to use during the selection.
 	@GroupByClause	The SQL group by clause to use during the selection.
 	@OrderByClause	The SQL order by clause to use during the selection.
