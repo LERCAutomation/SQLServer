@@ -3,7 +3,7 @@
   SQL Server table containing a subset of records based on a given set
   of SQL criteria.
   
-  Copyright © 2015 Andy Foy Consulting
+  Copyright © 2015 - 2016 Andy Foy Consulting
   
   This file is used by the 'DataSelector' tool, versions of which are
   available for MapInfo and ArcGIS.
@@ -22,7 +22,7 @@
   <http://www.gnu.org/licenses/>.
 \*===========================================================================*/
 
-USE [NBNData]
+USE NBNData
 GO
 
 SET ANSI_NULLS ON
@@ -42,9 +42,16 @@ GO
 	@GroupByClause	The SQL group by clause to use during the selection.
 	@OrderByClause	The SQL order by clause to use during the selection.
 	@UserId			The userid of the user executing the selection.
+	@Split			If the records should be split into separate point
+					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Sep 2015
+  Last revised:		Jan 2016
+
+ *****************  Version 4  *****************
+ Author: Andy Foy		Date: 18/01/2016
+ A. Added new split parameter to indicate if output
+	table should be split into points and polygons.
 
  *****************  Version 3  *****************
  Author: Andy Foy		Date: 09/09/2015
@@ -73,20 +80,34 @@ if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SC
 GO
 
 -- Create the stored procedure
-CREATE PROCEDURE [dbo].[AFSelectSppSubset] @Schema varchar(50),
+CREATE PROCEDURE [dbo].[AFSelectSppSubset]
+	@Schema varchar(50),
 	@SpeciesTable varchar(50),
 	@ColumnNames varchar(1000),
 	@WhereClause varchar(1000),
 	@GroupByClause varchar(1000),
 	@OrderByClause varchar(1000),
-	@UserId varchar(50)
+	@UserId varchar(50),
+	@Split bit
 AS
 BEGIN
 
 	SET NOCOUNT ON
 
+	If @Schema = ''
+		SET @Schema = 'dbo'
+	If @ColumnNames = ''
+		SET @ColumnNames = '*'
+	If @WhereClause IS NULL
+		SET @WhereClause = 0
+	If @GroupByClause IS NULL
+		SET @GroupByClause = 0
+	If @OrderByClause IS NULL
+		SET @OrderByClause = 0
 	IF @UserId IS NULL
 		SET @UserId = 'temp'
+	If @Split IS NULL
+		SET @Split = 0
 
 	DECLARE @debug int
 	Set @debug = 0
@@ -96,26 +117,8 @@ BEGIN
 
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
-
+	DECLARE @RecCnt Int
 	DECLARE @TempTable varchar(50)
-	SET @TempTable = @SpeciesTable + '_' + @UserId
-
-	-- Drop the index on the sequential primary key of the temporary table if it already exists
-	If EXISTS (SELECT column_name FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable AND COLUMN_NAME = 'MI_PRINX' AND CONSTRAINT_NAME = 'PK_' + @TempTable + '_MI_PRINX')
-	BEGIN
-		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @TempTable +
-			' DROP CONSTRAINT PK_' + @TempTable + '_MI_PRINX'
-		EXEC (@sqlcommand)
-	END
-	
-	-- Drop the temporary table if it already exists
-	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable)
-	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary table ...'
-		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
-		EXEC (@sqlcommand)
-	END
 
 	-- Lookup table column names and spatial variables from Spatial_Tables
 	DECLARE @IsSpatial bit
@@ -149,9 +152,6 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @CoordSystem OUTPUT
 		
-	If @ColumnNames = ''
-		SET @ColumnNames = '*'
-
 	If @IsSpatial = 1
 	BEGIN
 		IF @debug = 1
@@ -169,143 +169,115 @@ BEGIN
 	If @OrderByClause <> ''
 		SET @OrderByClause = ' ORDER BY ' + @OrderByClause
 
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing selection ...'
-
-	-- Select the species records into the temporary table
-	SET @sqlcommand = 
-		'SELECT ' + @ColumnNames +
-		' INTO ' + @Schema + '.' + @TempTable +
-		' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-		' WHERE ' + @WhereClause +
-		@GroupByClause +
-		@OrderByClause
-	EXEC (@sqlcommand)
-
-	DECLARE @RecCnt Int
-	Set @RecCnt = @@ROWCOUNT
-
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' records selected ...'
-
-	-- If the MapInfo MapCatalog exists then update it
-	IF EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
+	If @Split = 1 AND @IsSpatial = 1
 	BEGIN
 
-		-- Delete the MapInfo MapCatalog entry if it already exists
-		IF EXISTS (SELECT TABLENAME FROM [MAPINFO].[MAPINFO_MAPCATALOG] WHERE TABLENAME = @TempTable)
+		SET @TempTable = @SpeciesTable + '_point_' + @UserId
+
+		-- Drop the points temporary table if it already exists
+		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable)
 		BEGIN
-			IF @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
-			
-			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
-				' WHERE TABLENAME = ''' + @TempTable + ''''
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary point table ...'
+			SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 			EXEC (@sqlcommand)
 		END
 
-		-- Calculate the geometric extent of the records (plus their precision)
-		DECLARE @X1 int, @X2 int, @Y1 int, @Y2 int
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing point selection ...'
 
-		SET @X1 = 0
-		SET @X2 = 0
-		SET @Y1 = 0
-		SET @Y2 = 0
+		-- Select the species records into the points temporary table
+		SET @sqlcommand = 
+			'SELECT ' + @ColumnNames +
+			' INTO ' + @Schema + '.' + @TempTable +
+			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+			' WHERE ' + @WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POINT%''' +
+			@GroupByClause +
+			@OrderByClause
+		EXEC (@sqlcommand)
 
-		-- Check if the table is spatial and the necessary columns are in the table (including a geometry column)
-		IF  @IsSpatial = 1
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @XColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @YColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SizeColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SpatialColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE user_type_id = 129 AND Object_ID = Object_ID(@TempTable))
+		Set @RecCnt = @@ROWCOUNT
+
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' point records selected ...'
+
+		-- Update the MapInfo MapCatalog entry
+		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+		EXEC (@sqlcommand)
+
+		SET @TempTable = @SpeciesTable + '_poly_' + @UserId
+
+		-- Drop the polygons temporary table if it already exists
+		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable)
 		BEGIN
-
-			IF @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Determining spatial extent ...'
-
-			-- Retrieve the geometric extent values and store as variables
-			SET @sqlcommand = 'SELECT @xMin = MIN(' + @XColumn + '), ' +
-									 '@yMin = MIN(' + @YColumn + '), ' +
-									 '@xMax = MAX(' + @XColumn + ') + MAX(' + @SizeColumn + '), ' +
-									 '@yMax = MAX(' + @YColumn + ') + MAX(' + @SizeColumn + ') ' +
-									 'FROM ' + @Schema + '.' + @TempTable
-
-			SET @params =	'@xMin int OUTPUT, ' +
-							'@yMin int OUTPUT, ' +
-							'@xMax int OUTPUT, ' +
-							'@yMax int OUTPUT'
-		
-			EXEC sp_executesql @sqlcommand, @params,
-				@xMin = @X1 OUTPUT, @yMin = @Y1 OUTPUT, @xMax = @X2 OUTPUT, @yMax = @Y2 OUTPUT
-		
 			If @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Inserting the MapInfo MapCatalog entry ...'
-
-			-- Check if the rendition column is in the table
-			IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'MI_STYLE' AND Object_ID = Object_ID(@TempTable))
-			BEGIN
-				SET @sqlcommand = 'ALTER TABLE ' + @TempTable + ' ADD MI_STYLE varchar(254) NULL'
-				EXEC (@sqlcommand)
-			END
-			
-			-- Adding table to MapInfo MapCatalog
-			INSERT INTO [MAPINFO].[MAPINFO_MAPCATALOG]
-				([SPATIALTYPE]
-				,[TABLENAME]
-				,[OWNERNAME]
-				,[SPATIALCOLUMN]
-				,[DB_X_LL]
-				,[DB_Y_LL]
-				,[DB_X_UR]
-				,[DB_Y_UR]
-				,[COORDINATESYSTEM]
-				,[SYMBOL]
-				,[XCOLUMNNAME]
-				,[YCOLUMNNAME]
-				,[RENDITIONTYPE]
-				,[RENDITIONCOLUMN]
-				,[RENDITIONTABLE]
-				,[NUMBER_ROWS]
-				,[VIEW_X_LL]
-				,[VIEW_Y_LL]
-				,[VIEW_X_UR]
-				,[VIEW_Y_UR])
-			VALUES
-				(17.3
-				,@TempTable
-				,@Schema
-				,@SpatialColumn
-				,@X1
-				,@Y1
-				,@X2
-				,@Y2
-				,@CoordSystem
-				,'Pen (1,2,0)  Brush (1,16777215,16777215)'
-				,NULL
-				,NULL
-				,NULL
-				,'MI_STYLE'
-				,NULL
-				,@RecCnt
-				,NULL
-				,NULL
-				,NULL
-				,NULL)
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary polygon table ...'
+			SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
+			EXEC (@sqlcommand)
 		END
-		ELSE
-		BEGIN
 
-			IF @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is non-spatial or required columns are missing.'
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing polygon selection ...'
 
-		END
+		-- Select the species records into the polygons temporary table
+		SET @sqlcommand = 
+			'SELECT ' + @ColumnNames +
+			' INTO ' + @Schema + '.' + @TempTable +
+			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+			' WHERE ' + @WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POLY%''' +
+			@GroupByClause +
+			@OrderByClause
+		EXEC (@sqlcommand)
+
+		Set @RecCnt = @@ROWCOUNT
+
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' polygon records selected ...'
+
+		-- Update the MapInfo MapCatalog entry
+		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+		EXEC (@sqlcommand)
 
 	END
 	ELSE
-	-- If the MapInfo MapCatalog doesn't exist then skip updating it
 	BEGIN
+
+		SET @TempTable = @SpeciesTable + '_' + @UserId
+
+		-- Drop the temporary table if it already exists
+		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable)
+		BEGIN
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary table ...'
+			SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
+			EXEC (@sqlcommand)
+		END
+
 		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'MapInfo MapCatalog not found - skipping update ...'
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing selection ...'
+
+		-- Select the species records into the temporary table
+		SET @sqlcommand = 
+			'SELECT ' + @ColumnNames +
+			' INTO ' + @Schema + '.' + @TempTable +
+			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+			' WHERE ' + @WhereClause +
+			@GroupByClause +
+			@OrderByClause
+		EXEC (@sqlcommand)
+
+		Set @RecCnt = @@ROWCOUNT
+
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' records selected ...'
+
+		-- Update the MapInfo MapCatalog entry
+		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+		EXEC (@sqlcommand)
+
 	END
 
 	If @debug = 1

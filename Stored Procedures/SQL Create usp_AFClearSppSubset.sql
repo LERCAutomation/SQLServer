@@ -2,7 +2,7 @@
   AFClearSppSubset is a SQL stored procedure to delete an intermediate
   SQL Server table once it is no longer required.
   
-  Copyright © 2015 Andy Foy Consulting
+  Copyright © 2015 - 2016 Andy Foy Consulting
   
   This file is used by the 'DataSelector' and 'DataExtractor' tools, versions
   of which are available for MapInfo and ArcGIS.
@@ -21,7 +21,7 @@
   <http://www.gnu.org/licenses/>.
 \*===========================================================================*/
 
-USE [NBNData]
+USE NBNData
 GO
 
 SET ANSI_NULLS ON
@@ -30,7 +30,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 /*===========================================================================*\
-  Description:		Delete an existing species subset table.
+  Description:		Delete any existing species subset tables.
 
   Parameters:
 	@Schema			The schema for the partner and species table.
@@ -38,7 +38,11 @@ GO
 	@UserId			The userid of the user executing the selection.
 
   Created:			Sep 2015
-  Last revised:		Sep 2015
+  Last revised:		Jan 2016
+
+ *****************  Version 2  *****************
+ Author: Andy Foy		Date: 18/01/2016
+ A. Also delete any point and poly subset tables.
 
  *****************  Version 1  *****************
  Author: Andy Foy		Date: 03/06/2015
@@ -71,19 +75,65 @@ BEGIN
 	DECLARE @TempTable varchar(50)
 	SET @TempTable = @SpeciesTable + '_' + @UserId
 
-	-- Drop the index on the sequential primary key of the temporary table if it already exists
-	If exists (select column_name from INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE where TABLE_SCHEMA = @Schema and TABLE_NAME = @TempTable and COLUMN_NAME = 'MI_PRINX' and CONSTRAINT_NAME = 'PK_' + @TempTable + '_MI_PRINX')
-	BEGIN
-		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @TempTable +
-			' DROP CONSTRAINT PK_' + @SpeciesTable + '_MI_PRINX'
-		EXEC (@sqlcommand)
-	END
-	
 	-- Drop the temporary table if it already exists
 	If exists (select TABLE_NAME from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = @Schema and TABLE_NAME = @TempTable)
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary table ...'
+		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
+		EXEC (@sqlcommand)
+	END
+
+	-- If the MapInfo MapCatalog exists then update it
+	if exists (select TABLE_NAME from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = 'MAPINFO' and TABLE_NAME = 'MAPINFO_MAPCATALOG')
+	BEGIN
+
+		-- Delete the MapInfo MapCatalog entry if it exists
+		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable)
+		BEGIN
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
+			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
+				' WHERE TABLENAME = ''' + @TempTable + ''''
+			EXEC (@sqlcommand)
+		END
+
+	END
+
+	SET @TempTable = @SpeciesTable + '_point_' + @UserId
+
+	-- Drop the temporary table if it already exists
+	If exists (select TABLE_NAME from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = @Schema and TABLE_NAME = @TempTable)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary point table ...'
+		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
+		EXEC (@sqlcommand)
+	END
+
+	-- If the MapInfo MapCatalog exists then update it
+	if exists (select TABLE_NAME from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = 'MAPINFO' and TABLE_NAME = 'MAPINFO_MAPCATALOG')
+	BEGIN
+
+		-- Delete the MapInfo MapCatalog entry if it exists
+		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable)
+		BEGIN
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
+			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
+				' WHERE TABLENAME = ''' + @TempTable + ''''
+			EXEC (@sqlcommand)
+		END
+
+	END
+
+	SET @TempTable = @SpeciesTable + '_poly_' + @UserId
+
+	-- Drop the temporary table if it already exists
+	If exists (select TABLE_NAME from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = @Schema and TABLE_NAME = @TempTable)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary polygon table ...'
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
 	END
