@@ -18,8 +18,8 @@ GO
   Created:	Dec 2015
 
   Last revision information:
-    $Revision: 1 $
-    $Date: 18/12/15 $
+    $Revision: 2 $
+    $Date: 13/01/16 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -56,7 +56,7 @@ BEGIN
 	     
 	SET @SecondPart = REPLACE(@SecondPart,'WACA-Sch5-','/')
 	SET @SecondPart = REPLACE(@SecondPart,', /','/')
-	SET @TextOut = 'WACA-Sch5-' + SUBSTRING(@SecondPart, 2, LEN(@SecondPart))
+	SET @TextOut = @FirstPart + @SecondPart
          
 END
 ELSE

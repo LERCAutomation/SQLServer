@@ -20,8 +20,8 @@ GO
   Created:	Dec 2015
 
   Last revision information:
-    $Revision: 1 $
-    $Date: 17/12/15 $
+    $Revision: 2 $
+    $Date: 13/01/16 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -61,15 +61,19 @@ BEGIN
 			WHEN TTDT.Status_Abbreviation IS NULL THEN TDT.Short_Name
 			ELSE TTDT.Status_Abbreviation
 		END
+
 	FROM Index_Taxon_Designation ITD
 	INNER JOIN Taxon_Designation_Type TDT ON TDT.Taxon_Designation_Type_Key = ITD.Taxon_Designation_Type_Key
 	INNER JOIN Taxon_Designation_Set_Item TDSI ON TDSI.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
 	INNER JOIN Taxon_Designation_Set TDS ON TDS.Taxon_Designation_Set_Key = TDSI.Taxon_Designation_Set_Key
 	LEFT JOIN TVERC_Taxon_Designation_Types TTDT ON TTDT.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
+
 	WHERE ITD.Taxon_List_Item_Key = @Taxon_List_Item_Key
 	-- Filters by Taxon_Designation_Set if the Key is not null
 	AND (@Taxon_Designation_Set_Key IS NULL
 	OR TDS.Taxon_Designation_Set_Key = @Taxon_Designation_Set_Key)
+
+	ORDER BY TTDT.Sort_Order
 	
 	SELECT @ReturnValue =
 		-- Blank when this is the first value, otherwise
