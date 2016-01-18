@@ -169,6 +169,9 @@ BEGIN
 	If @OrderByClause <> ''
 		SET @OrderByClause = ' ORDER BY ' + @OrderByClause
 
+	If @WhereClause <> ''
+		SET @WhereClause = ' WHERE ' + @WhereClause
+
 	If @Split = 1 AND @IsSpatial = 1
 	BEGIN
 
@@ -191,7 +194,7 @@ BEGIN
 			'SELECT ' + @ColumnNames +
 			' INTO ' + @Schema + '.' + @TempTable +
 			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-			' WHERE ' + @WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POINT%''' +
+			@WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POINT%''' +
 			@GroupByClause +
 			@OrderByClause
 		EXEC (@sqlcommand)
@@ -225,7 +228,7 @@ BEGIN
 			'SELECT ' + @ColumnNames +
 			' INTO ' + @Schema + '.' + @TempTable +
 			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-			' WHERE ' + @WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POLY%''' +
+			@WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POLY%''' +
 			@GroupByClause +
 			@OrderByClause
 		EXEC (@sqlcommand)
@@ -263,7 +266,7 @@ BEGIN
 			'SELECT ' + @ColumnNames +
 			' INTO ' + @Schema + '.' + @TempTable +
 			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-			' WHERE ' + @WhereClause +
+			@WhereClause +
 			@GroupByClause +
 			@OrderByClause
 		EXEC (@sqlcommand)
