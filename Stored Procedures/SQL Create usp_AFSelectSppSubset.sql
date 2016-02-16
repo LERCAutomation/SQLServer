@@ -31,7 +31,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 /*===========================================================================*\
-  Description:		Select species records based on the SQL where clause
+  Description:		Select species records based on the SQL clauses
 					passed by the calling routine.
 
   Parameters:
@@ -46,7 +46,12 @@ GO
 					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Jan 2016
+  Last revised:		Feb 2016
+
+ *****************  Version 5  *****************
+ Author: Andy Foy		Date: 16/02/2016
+ A. Allow WHERE clause to also contain FROM clause
+    so that the query can contain JOIN statements.
 
  *****************  Version 4  *****************
  Author: Andy Foy		Date: 18/01/2016
@@ -109,6 +114,9 @@ BEGIN
 	If @Split IS NULL
 		SET @Split = 0
 
+	DECLARE @FromClause varchar(1000)
+	SET @FromClause = ''
+
 	DECLARE @debug int
 	Set @debug = 0
 
@@ -169,8 +177,11 @@ BEGIN
 	If @OrderByClause <> ''
 		SET @OrderByClause = ' ORDER BY ' + @OrderByClause
 
-	If @WhereClause <> ''
+	If @WhereClause <> '' AND @WhereClause NOT LIKE 'FROM %'
+	BEGIN
+		SET @FromClause = ' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp'
 		SET @WhereClause = ' WHERE ' + @WhereClause
+	END
 
 	If @Split = 1 AND @IsSpatial = 1
 	BEGIN
@@ -192,8 +203,8 @@ BEGIN
 		-- Select the species records into the points temporary table
 		SET @sqlcommand = 
 			'SELECT ' + @ColumnNames +
-			' INTO ' + @Schema + '.' + @TempTable +
-			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+			' INTO ' + @Schema + '.' + @TempTable + ' ' +
+			@FromClause +
 			@WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POINT%''' +
 			@GroupByClause +
 			@OrderByClause
@@ -226,8 +237,8 @@ BEGIN
 		-- Select the species records into the polygons temporary table
 		SET @sqlcommand = 
 			'SELECT ' + @ColumnNames +
-			' INTO ' + @Schema + '.' + @TempTable +
-			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+			' INTO ' + @Schema + '.' + @TempTable + ' ' +
+			@FromClause +
 			@WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POLY%''' +
 			@GroupByClause +
 			@OrderByClause
@@ -264,8 +275,8 @@ BEGIN
 		-- Select the species records into the temporary table
 		SET @sqlcommand = 
 			'SELECT ' + @ColumnNames +
-			' INTO ' + @Schema + '.' + @TempTable +
-			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+			' INTO ' + @Schema + '.' + @TempTable + ' ' +
+			@FromClause +
 			@WhereClause +
 			@GroupByClause +
 			@OrderByClause
