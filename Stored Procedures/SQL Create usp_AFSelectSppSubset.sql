@@ -48,6 +48,10 @@ GO
   Created:			Jun 2015
   Last revised:		Feb 2016
 
+ *****************  Version 6  *****************
+ Author: Andy Foy		Date: 23/02/2016
+ A. Allow each SQL clause to be up to 2000 chars.
+
  *****************  Version 5  *****************
  Author: Andy Foy		Date: 16/02/2016
  A. Allow WHERE clause to also contain FROM clause
@@ -88,10 +92,10 @@ GO
 CREATE PROCEDURE [dbo].[AFSelectSppSubset]
 	@Schema varchar(50),
 	@SpeciesTable varchar(50),
-	@ColumnNames varchar(1000),
-	@WhereClause varchar(1000),
-	@GroupByClause varchar(1000),
-	@OrderByClause varchar(1000),
+	@ColumnNames varchar(2000),
+	@WhereClause varchar(2000),
+	@GroupByClause varchar(2000),
+	@OrderByClause varchar(2000),
 	@UserId varchar(50),
 	@Split bit
 AS
@@ -114,7 +118,7 @@ BEGIN
 	If @Split IS NULL
 		SET @Split = 0
 
-	DECLARE @FromClause varchar(1000)
+	DECLARE @FromClause varchar(2000)
 	SET @FromClause = ''
 
 	DECLARE @debug int
@@ -123,8 +127,8 @@ BEGIN
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Started.'
 
-	DECLARE @sqlCommand nvarchar(2000)
-	DECLARE @params nvarchar(2000)
+	DECLARE @sqlCommand nvarchar(4000)
+	DECLARE @params nvarchar(4000)
 	DECLARE @RecCnt Int
 	DECLARE @TempTable varchar(50)
 
