@@ -53,6 +53,9 @@ GO
  A. Add brackets to SQL where clause to ensure
     correct execution.
  B. Remove hard-coded reference to SP_GEOMETRY.
+ C. Improve performance by examining type of
+    geometry (STGeometryType) instead of examining
+	geometry as text (STAsText).
 
  *****************  Version 6  *****************
  Author: Andy Foy		Date: 23/02/2016
@@ -219,7 +222,7 @@ BEGIN
 			'SELECT ' + @ColumnNames +
 			' INTO ' + @Schema + '.' + @TempTable + ' ' +
 			@FromClause +
-			@WhereClause + ' AND ' + @SpatialColumn + '.STAsText() LIKE ''POINT%''' +
+			@WhereClause + ' AND ' + @SpatialColumn + '.STGeometryType() LIKE ''%Point''' +
 			@GroupByClause +
 			@OrderByClause
 		EXEC (@sqlcommand)
@@ -253,7 +256,7 @@ BEGIN
 			'SELECT ' + @ColumnNames +
 			' INTO ' + @Schema + '.' + @TempTable + ' ' +
 			@FromClause +
-			@WhereClause + ' AND ' + @SpatialColumn + '.STAsText() LIKE ''POLY%''' +
+			@WhereClause + ' AND ' + @SpatialColumn + '.STGeometryType() LIKE ''%Polygon''' +
 			@GroupByClause +
 			@OrderByClause
 		EXEC (@sqlcommand)
