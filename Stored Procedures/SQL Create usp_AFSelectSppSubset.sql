@@ -46,7 +46,13 @@ GO
 					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Feb 2016
+  Last revised:		Mar 2016
+
+ *****************  Version 7  *****************
+ Author: Andy Foy		Date: 04/03/2016
+ A. Add brackets to SQL where clause to ensure
+    correct execution.
+ B. Remove hard-coded reference to SP_GEOMETRY.
 
  *****************  Version 6  *****************
  Author: Andy Foy		Date: 23/02/2016
@@ -184,7 +190,11 @@ BEGIN
 	If @WhereClause <> '' AND @WhereClause NOT LIKE 'FROM %'
 	BEGIN
 		SET @FromClause = ' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp'
-		SET @WhereClause = ' WHERE ' + @WhereClause
+		SET @WhereClause = ' WHERE (' + @WhereClause + ')'
+	END
+	ELSE
+	BEGIN
+		SET @WhereClause = REPLACE(@WhereClause, ' WHERE ', ' WHERE (') + ')'
 	END
 
 	If @Split = 1 AND @IsSpatial = 1
@@ -209,7 +219,7 @@ BEGIN
 			'SELECT ' + @ColumnNames +
 			' INTO ' + @Schema + '.' + @TempTable + ' ' +
 			@FromClause +
-			@WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POINT%''' +
+			@WhereClause + ' AND ' + @SpatialColumn + '.STAsText() LIKE ''POINT%''' +
 			@GroupByClause +
 			@OrderByClause
 		EXEC (@sqlcommand)
@@ -243,7 +253,7 @@ BEGIN
 			'SELECT ' + @ColumnNames +
 			' INTO ' + @Schema + '.' + @TempTable + ' ' +
 			@FromClause +
-			@WhereClause + ' AND SP_GEOMETRY.STAsText() LIKE ''POLY%''' +
+			@WhereClause + ' AND ' + @SpatialColumn + '.STAsText() LIKE ''POLY%''' +
 			@GroupByClause +
 			@OrderByClause
 		EXEC (@sqlcommand)
