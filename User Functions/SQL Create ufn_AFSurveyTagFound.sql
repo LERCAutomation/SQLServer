@@ -21,6 +21,15 @@ GO
     $Date: 03/12/15 $
     $Author: Andyfoy $
 
+ * *****************  Version 2  *****************
+ * User: Andy Foy   				Date: 14/03/16
+ * A. Change survey tag comparison to include single
+ *    quotes around tags.
+ * 
+ * *****************  Version 1  *****************
+ * User: Andy Foy   				Date: 03/12/15
+ * A. Initial version.
+ * 
 \*===========================================================================*/
 
 -- Drop the user function if it already exists
@@ -50,7 +59,7 @@ BEGIN
 			INNER JOIN Concept C ON C.Concept_Key = ST.Concept_Key
 			INNER JOIN Term T ON T.Term_Key = C.Term_Key
 			WHERE ST.Survey_Key = @SurveyKey
-			AND @SurveyTags LIKE '%' + T.Item_Name + '%'
+			AND @SurveyTags LIKE '%''' + T.Item_Name + '''%'
 			)
 		BEGIN
 			SET @TagFound = 1
