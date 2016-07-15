@@ -22,7 +22,7 @@
   <http://www.gnu.org/licenses/>.
 \*===========================================================================*/
 
-USE [NBNData]
+USE NBNData
 GO
 
 SET ANSI_NULLS ON
@@ -46,7 +46,12 @@ GO
 	@UserId			The userid of the user executing the selection.
 
   Created:			Nov 2012
-  Last revised: 	Mar 2016
+  Last revised: 	Jul 2016
+
+ *****************  Version 6  *****************
+ Author: Andy Foy		Date: 11/07/2016
+ A. Make sure temporary index table is dropped before
+    .
 
  *****************  Version 5  *****************
  Author: Andy Foy		Date: 14/03/2016
@@ -131,6 +136,28 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
+	-- Drop the index on the sequential primary key of the temporary index table if it already exists
+	If EXISTS (SELECT column_name FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable AND COLUMN_NAME = 'MI_PRINX' AND CONSTRAINT_NAME = 'PK_' + @TempTable + '_MI_PRINX')
+	BEGIN
+		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @TempTable + '_PRINX' +
+			' DROP CONSTRAINT PK_' + @TempTable + '_PRINX_PRINX'
+		EXEC (@sqlcommand)
+	END
+	
+	-- Drop the temporary index table if it already exists
+	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable + '_PRINX')
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary index table ...'
+		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable + '_PRINX'
+		EXEC (@sqlcommand)
+	END
+
+
+	SET @sqlcommand = 'CREATE TABLE ' + @Schema + '.' + @TempTable + '_PRINX (' +
+		' MI_PRINX int NOT NULL,' +
+		' CONSTRAINT PK_' + @TempTable + '_PRINX_PRINX PRIMARY KEY (MI_PRINX)' +
+		' )'
 	-- Lookup survey tags and spatial geometry variables from Partner table
 	DECLARE @PartnerGeom geometry
 	DECLARE @PartnerTags varchar(254)

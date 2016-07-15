@@ -178,10 +178,10 @@ BEGIN
 		IF @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is spatial'
 
-		If @WhereClause = ''
-			SET @WhereClause = 'Spp.' + @SpatialColumn + ' IS NOT NULL'
-		Else
-			SET @WhereClause = @WhereClause + ' AND Spp.' + @SpatialColumn + ' IS NOT NULL'
+--		If @WhereClause = ''
+--			SET @WhereClause = 'Spp.' + @SpatialColumn + ' IS NOT NULL'
+--		Else
+--			SET @WhereClause = @WhereClause + ' AND Spp.' + @SpatialColumn + ' IS NOT NULL'
 	END
 
 	If @GroupByClause <> ''
@@ -190,15 +190,13 @@ BEGIN
 	If @OrderByClause <> ''
 		SET @OrderByClause = ' ORDER BY ' + @OrderByClause
 
-	If @WhereClause <> '' AND @WhereClause NOT LIKE 'FROM %'
-	BEGIN
+	If @WhereClause NOT LIKE 'FROM %'
 		SET @FromClause = ' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp'
+
+	If @WhereClause <> '' AND @WhereClause NOT LIKE 'FROM %'
 		SET @WhereClause = ' WHERE (' + @WhereClause + ')'
-	END
 	ELSE
-	BEGIN
 		SET @WhereClause = REPLACE(@WhereClause, ' WHERE ', ' WHERE (') + ')'
-	END
 
 	If @Split = 1 AND @IsSpatial = 1
 	BEGIN
