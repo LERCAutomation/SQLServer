@@ -32,7 +32,7 @@ GO
 
 /*===========================================================================*\
   Description:		Prepares an existing SQL table that contains spatial data
-					so that it can be used 'spatially' by SQL Server and MapInfo
+					so that it can be used 'spatially' by SQL Server and ArcGIS
 
   Parameters:
 	@Schema			The schema for the table to be spatialised.
@@ -49,6 +49,10 @@ GO
 					2 = Mid, 3 = Upper Right)
 
   Created:			Nov 2012
+
+ *****************  Version 6  *****************
+ Author: Andy Foy		Date: 25/07/2016
+ A. Added clearer comments.
 
  *****************  Version 5  *****************
  Author: Andy Foy		Date: 19/12/2015
@@ -89,6 +93,10 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
+	/*---------------------------------------------------------------------------*\
+		Set any default parameter values and declare any variables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @debug int
 	Set @debug = 1
 
@@ -100,8 +108,12 @@ BEGIN
 
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
+	DECLARE @RecCnt Int
 
-	-- Lookup table column names and spatial variables from Spatial_Tables
+	/*---------------------------------------------------------------------------*\
+		Lookup table column names and spatial variables from Spatial_Tables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @IsSpatial bit
 	DECLARE @XColumn varchar(32), @YColumn varchar(32), @SizeColumn varchar(32), @SpatialColumn varchar(32)
 	DECLARE @SRID int, @CoordSystem varchar(254)
@@ -135,6 +147,10 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @SRID OUTPUT, @O7 = @CoordSystem OUTPUT
 	
+	/*---------------------------------------------------------------------------*\
+		Add new field indexes (if they don't already exist)
+	\*---------------------------------------------------------------------------*/
+
 	-- Add a new non-clustered index on the XColumn field if it doesn't already exists
 	if not exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @XColumn)
 	BEGIN
@@ -168,7 +184,10 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Drop the spatial index on the geometry field if it already exists
+	/*---------------------------------------------------------------------------*\
+		Drop the spatial index on the geometry field (if it already exists)
+	\*---------------------------------------------------------------------------*/
+
 	if exists (select name from sys.indexes where name = 'SIndex_' + @Table + '_' + @SpatialColumn)
 	BEGIN
 		If @debug = 1
@@ -178,7 +197,10 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Add a new geometry field if it doesn't already exists
+	/*---------------------------------------------------------------------------*\
+		Add a new geometry field (if it doesn't already exist)
+	\*---------------------------------------------------------------------------*/
+
 	if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = @SpatialColumn)
 	BEGIN
 		If @debug = 1
@@ -189,10 +211,15 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	/*---------------------------------------------------------------------------*\
+		Set the geometry field for points
+	\*---------------------------------------------------------------------------*/
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Setting valid point geometries ...'
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the lower left corner of the grid square
 	If @PointPos = 1
 	BEGIN
 
@@ -210,8 +237,12 @@ BEGIN
 
 		EXEC sp_executesql @sqlcommand
 
+		Set @RecCnt = @@ROWCOUNT
+
 	END
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the middle of the grid square
 	If @PointPos = 2
 	BEGIN
 
@@ -229,8 +260,12 @@ BEGIN
 
 		EXEC sp_executesql @sqlcommand
 
+		Set @RecCnt = @@ROWCOUNT
+
 	END
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the upper right corner of the grid square
 	If @PointPos = 3
 	BEGIN
 		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @SpatialTable + ' ' +
@@ -247,9 +282,21 @@ BEGIN
 
 		EXEC sp_executesql @sqlcommand
 
+		Set @RecCnt = @@ROWCOUNT
+
 	END
 
-	-- Set the geometry for polygons based on the Xcolumn, YColumn and SizeColumn values
+	/*---------------------------------------------------------------------------*\
+		Report the number of point records spatialised
+	\*---------------------------------------------------------------------------*/
+
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' point records spatialised ...'
+
+	/*---------------------------------------------------------------------------*\
+		Set the geometry field for polygons
+	\*---------------------------------------------------------------------------*/
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Setting valid polygon geometries ...'
 
@@ -276,10 +323,22 @@ BEGIN
 
 	EXEC sp_executesql @sqlcommand
 
+	Set @RecCnt = @@ROWCOUNT
+
+	/*---------------------------------------------------------------------------*\
+		Report the number of polygon records spatialised
+	\*---------------------------------------------------------------------------*/
+
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' polygon records spatialised ...'
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Determining spatial extent ...'
 
-	-- Calculate the geometric extent of the records (plus their precision)
+	/*---------------------------------------------------------------------------*\
+		Calculate the geometric extent of the records (plus their precision)
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE
 		@X1 int,
 		@X2 int,
@@ -306,6 +365,10 @@ BEGIN
 		
 	EXEC sp_executesql @sqlcommand, @params,
 		@O1 = @X1 OUTPUT, @O2 = @Y1 OUTPUT, @O3 = @X2 OUTPUT, @O4 = @Y2 OUTPUT
+
+	/*---------------------------------------------------------------------------*\
+		Create the spatial index
+	\*---------------------------------------------------------------------------*/
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating spatial index ...'

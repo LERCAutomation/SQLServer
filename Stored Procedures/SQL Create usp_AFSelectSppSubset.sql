@@ -32,7 +32,7 @@ GO
 
 /*===========================================================================*\
   Description:		Select species records based on the SQL clauses
-					passed by the calling routine.
+					passed by the calling routine ready for use by MapInfo
 
   Parameters:
 	@Schema			The schema for the partner and species table.
@@ -46,7 +46,11 @@ GO
 					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Mar 2016
+  Last revised:		Jul 2016
+
+ *****************  Version 8  *****************
+ Author: Andy Foy		Date: 25/07/2016
+ A. Added clearer comments.
 
  *****************  Version 7  *****************
  Author: Andy Foy		Date: 04/03/2016
@@ -93,12 +97,12 @@ GO
 \*===========================================================================*/
 
 -- Drop the procedure if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFSelectSppSubset')
+If EXISTS (SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = 'dbo' AND ROUTINE_NAME = 'AFSelectSppSubset')
 	DROP PROCEDURE dbo.AFSelectSppSubset
 GO
 
 -- Create the stored procedure
-CREATE PROCEDURE [dbo].[AFSelectSppSubset]
+CREATE PROCEDURE dbo.AFSelectSppSubset
 	@Schema varchar(50),
 	@SpeciesTable varchar(50),
 	@ColumnNames varchar(2000),
@@ -111,6 +115,10 @@ AS
 BEGIN
 
 	SET NOCOUNT ON
+
+	/*---------------------------------------------------------------------------*\
+		Set any default parameter values and declare any variables
+	\*---------------------------------------------------------------------------*/
 
 	If @Schema = ''
 		SET @Schema = 'dbo'
@@ -141,7 +149,10 @@ BEGIN
 	DECLARE @RecCnt Int
 	DECLARE @TempTable varchar(50)
 
-	-- Lookup table column names and spatial variables from Spatial_Tables
+	/*---------------------------------------------------------------------------*\
+		Lookup table column names and spatial variables from Spatial_Tables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @IsSpatial bit
 	DECLARE @XColumn varchar(32), @YColumn varchar(32), @SizeColumn varchar(32), @SpatialColumn varchar(32)
 	DECLARE @CoordSystem varchar(254)
@@ -158,9 +169,9 @@ BEGIN
 							 '@O3 = SizeColumn, ' +
 							 '@O4 = IsSpatial, ' +
 							 '@O5 = SpatialColumn, ' +
-							 '@O6 = CoordSystem ' +
-						'FROM ' + @Schema + '.' + @SpatialTable + ' ' +
-						'WHERE TableName = ''' + @SpeciesTable + ''' AND OwnerName = ''' + @Schema + ''''
+							 '@O6 = CoordSystem' +
+						' FROM ' + @Schema + '.' + @SpatialTable +
+						' WHERE TableName = ''' + @SpeciesTable + ''' AND OwnerName = ''' + @Schema + ''''
 
 	SET @params =	'@O1 varchar(32) OUTPUT, ' +
 					'@O2 varchar(32) OUTPUT, ' +
@@ -173,6 +184,10 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @CoordSystem OUTPUT
 		
+	/*---------------------------------------------------------------------------*\
+		Report if the table is spatially enabled
+	\*---------------------------------------------------------------------------*/
+
 	If @IsSpatial = 1
 	BEGIN
 		IF @debug = 1
@@ -183,6 +198,10 @@ BEGIN
 --		Else
 --			SET @WhereClause = @WhereClause + ' AND Spp.' + @SpatialColumn + ' IS NOT NULL'
 	END
+
+	/*---------------------------------------------------------------------------*\
+		Prefix the SQL clause fields (if required)
+	\*---------------------------------------------------------------------------*/
 
 	If @GroupByClause <> ''
 		SET @GroupByClause = ' GROUP BY ' + @GroupByClause
@@ -198,6 +217,11 @@ BEGIN
 	ELSE
 		SET @WhereClause = REPLACE(@WhereClause, ' WHERE ', ' WHERE (') + ')'
 
+	/*---------------------------------------------------------------------------*\
+		Perform the spatial selection, separating points and polygons into
+		different tables
+	\*---------------------------------------------------------------------------*/
+
 	If @Split = 1 AND @IsSpatial = 1
 	BEGIN
 
@@ -212,6 +236,10 @@ BEGIN
 			EXEC (@sqlcommand)
 		END
 
+		/*---------------------------------------------------------------------------*\
+			Select the point species records into a temporary table
+		\*---------------------------------------------------------------------------*/
+
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing point selection ...'
 
@@ -225,12 +253,19 @@ BEGIN
 			@OrderByClause
 		EXEC (@sqlcommand)
 
+		/*---------------------------------------------------------------------------*\
+			Report the number of point records selected
+		\*---------------------------------------------------------------------------*/
+
 		Set @RecCnt = @@ROWCOUNT
 
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' point records selected ...'
 
-		-- Update the MapInfo MapCatalog entry
+		/*---------------------------------------------------------------------------*\
+			Update the MapInfo MapCatalog if it exists
+		\*---------------------------------------------------------------------------*/
+
 		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 		EXEC (@sqlcommand)
@@ -246,6 +281,10 @@ BEGIN
 			EXEC (@sqlcommand)
 		END
 
+		/*---------------------------------------------------------------------------*\
+			Select the polygon species records into a temporary table
+		\*---------------------------------------------------------------------------*/
+
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing polygon selection ...'
 
@@ -259,12 +298,19 @@ BEGIN
 			@OrderByClause
 		EXEC (@sqlcommand)
 
+		/*---------------------------------------------------------------------------*\
+			Report the number of polygon records selected
+		\*---------------------------------------------------------------------------*/
+
 		Set @RecCnt = @@ROWCOUNT
 
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' polygon records selected ...'
 
-		-- Update the MapInfo MapCatalog entry
+		/*---------------------------------------------------------------------------*\
+			Update the MapInfo MapCatalog if it exists
+		\*---------------------------------------------------------------------------*/
+
 		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 		EXEC (@sqlcommand)
@@ -272,6 +318,11 @@ BEGIN
 	END
 	ELSE
 	BEGIN
+
+		/*---------------------------------------------------------------------------*\
+			Perform the spatial selection, selecting points and polygons into
+			the same table
+		\*---------------------------------------------------------------------------*/
 
 		SET @TempTable = @SpeciesTable + '_' + @UserId
 
@@ -283,6 +334,10 @@ BEGIN
 			SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 			EXEC (@sqlcommand)
 		END
+
+		/*---------------------------------------------------------------------------*\
+			Select the species records into a temporary table
+		\*---------------------------------------------------------------------------*/
 
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing selection ...'
@@ -302,7 +357,10 @@ BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' records selected ...'
 
-		-- Update the MapInfo MapCatalog entry
+		/*---------------------------------------------------------------------------*\
+			Update the MapInfo MapCatalog if it exists
+		\*---------------------------------------------------------------------------*/
+
 		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 		EXEC (@sqlcommand)

@@ -3,7 +3,7 @@
   SQL Server table containing a subset of records based on their spatial
   intersection with a given record in another table.
   
-  Copyright © 2012-2013, 2015 Andy Foy Consulting
+  Copyright © 2012-2013, 2015-2016 Andy Foy Consulting
   
   This file is used by the 'DataExtractor' tool, versions of which are
   available for MapInfo and ArcGIS.
@@ -47,6 +47,12 @@ GO
 
   Created:			Nov 2012
   Last revised: 	Jul 2016
+
+ *****************  Version 7  *****************
+ Author: Andy Foy		Date: 25/07/2016
+ A. Only create temporary survey tag table if it's
+    going to be used.
+ B. Added clearer comments.
 
  *****************  Version 6  *****************
  Author: Andy Foy		Date: 11/07/2016
@@ -104,7 +110,11 @@ BEGIN
 
 	SET NOCOUNT ON
 
-	IF @UserId IS NULL
+	/*---------------------------------------------------------------------------*\
+		Set any default parameter values and declare any variables
+	\*---------------------------------------------------------------------------*/
+
+	If @UserId IS NULL
 		SET @UserId = 'temp'
 
 	DECLARE @debug int
@@ -118,6 +128,10 @@ BEGIN
 
 	DECLARE @TempTable varchar(50)
 	SET @TempTable = @SpeciesTable + '_' + @UserId
+
+	/*---------------------------------------------------------------------------*\
+		Drop any existing temporary tables
+	\*---------------------------------------------------------------------------*/
 
 	-- Drop the index on the sequential primary key of the temporary table if it already exists
 	If EXISTS (SELECT column_name FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable AND COLUMN_NAME = 'MI_PRINX' AND CONSTRAINT_NAME = 'PK_' + @TempTable + '_MI_PRINX')
@@ -153,12 +167,10 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
+	/*---------------------------------------------------------------------------*\
+		Lookup survey tags and spatial geometry variables from Partner table
+	\*---------------------------------------------------------------------------*/
 
-	SET @sqlcommand = 'CREATE TABLE ' + @Schema + '.' + @TempTable + '_PRINX (' +
-		' MI_PRINX int NOT NULL,' +
-		' CONSTRAINT PK_' + @TempTable + '_PRINX_PRINX PRIMARY KEY (MI_PRINX)' +
-		' )'
-	-- Lookup survey tags and spatial geometry variables from Partner table
 	DECLARE @PartnerGeom geometry
 	DECLARE @PartnerTags varchar(254)
 
@@ -174,20 +186,32 @@ BEGIN
 	EXEC sp_executesql @sqlcommand, @params,
 		@O1 = @PartnerGeom OUTPUT, @O2 = @PartnerTags OUTPUT
 	
-	If @PartnerTags IS NULL
-		SET @PartnerTags = ''
-	
-	CREATE TABLE #TagsTable
-	(
-		SurveyKey char(16) NOT NULL,
-		TagFound int NOT NULL
-	)
+	/*---------------------------------------------------------------------------*\
+		Create a temporary survey tags table (if required)
+	\*---------------------------------------------------------------------------*/
 
-	INSERT INTO #TagsTable (SurveyKey, TagFound)
-	SELECT SURVEY_KEY, dbo.AFSurveyTagFound(SURVEY_KEY, @PartnerTags)
-	FROM SURVEY
+	If (@SelectType = 2 AND @PartnerTags <> '') Or (@SelectType = 3 AND @PartnerGeom IS NULL)
+	BEGIN
+
+		If @PartnerTags IS NULL
+			SET @PartnerTags = ''
 	
-	-- Lookup table column names and spatial variables from Spatial_Tables
+		CREATE TABLE #TagsTable
+		(
+			SurveyKey char(16) NOT NULL,
+			TagFound int NOT NULL
+		)
+
+		INSERT INTO #TagsTable (SurveyKey, TagFound)
+		SELECT SURVEY_KEY, dbo.AFSurveyTagFound(SURVEY_KEY, @PartnerTags)
+		FROM SURVEY
+
+	END
+	
+	/*---------------------------------------------------------------------------*\
+		Lookup table column names and spatial variables from Spatial_Tables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @IsSpatial bit
 	DECLARE @XColumn varchar(32), @YColumn varchar(32), @SizeColumn varchar(32), @SpatialColumn varchar(32)
 	DECLARE @CoordSystem varchar(254), @SurveyKeyColumn varchar(32)
@@ -221,17 +245,24 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @CoordSystem OUTPUT, @O7 = @SurveyKeyColumn OUTPUT
 		
-	-- Check if the table is spatially enabled
+	/*---------------------------------------------------------------------------*\
+		Report if the table is spatially enabled
+	\*---------------------------------------------------------------------------*/
+
 	If @IsSpatial = 1
 	BEGIN
 		IF @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is spatial.'
 	END
 
-	-- Select the species records into the temporary table
+	/*---------------------------------------------------------------------------*\
+		Select the species record primary keys into a temporary table
+	\*---------------------------------------------------------------------------*/
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing selection for partner = ' + @Partner + ' ...'
 
+	-- Create a temporary index table
 	SET @sqlcommand = 'CREATE TABLE ' + @Schema + '.' + @TempTable + '_PRINX (' +
 		' MI_PRINX int NOT NULL,' +
 		' CONSTRAINT PK_' + @TempTable + '_PRINX_PRINX PRIMARY KEY (MI_PRINX)' +
@@ -323,136 +354,37 @@ BEGIN
 		END
 	END
 
+	/*---------------------------------------------------------------------------*\
+		Report the number of records selected
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @RecCnt Int
 	Set @RecCnt = @@ROWCOUNT
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' records selected ...'
 
+	/*---------------------------------------------------------------------------*\
+		Drop any temporary tables no longer required
+	\*---------------------------------------------------------------------------*/
+
+	-- Drop the temporary index table
 	SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable + '_PRINX'
 	EXEC (@sqlcommand)
 
-	DROP TABLE #TagsTable
+	-- Drop the temporary survey tags table (if it exists)
+	IF OBJECT_ID('tempdb..#TagsTable') IS NOT NULL
+		DROP TABLE #TagsTable
 
-	-- If the MapInfo MapCatalog exists then update it
-	IF EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
-	BEGIN
+	/*---------------------------------------------------------------------------*\
+		Update the MapInfo MapCatalog if it exists
+	\*---------------------------------------------------------------------------*/
 
-		-- Delete the MapInfo MapCatalog entry if it already exists
-		IF EXISTS (SELECT TABLENAME FROM [MAPINFO].[MAPINFO_MAPCATALOG] WHERE TABLENAME = @TempTable)
-		BEGIN
-			IF @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
-			
-			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
-				' WHERE TABLENAME = ''' + @TempTable + ''''
-			EXEC (@sqlcommand)
-		END
+	-- Update the MapInfo MapCatalog entry
+	SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+	EXEC (@sqlcommand)
 
-		-- Calculate the geometric extent of the records (plus their precision)
-		DECLARE @X1 int, @X2 int, @Y1 int, @Y2 int
-
-		SET @X1 = 0
-		SET @X2 = 0
-		SET @Y1 = 0
-		SET @Y2 = 0
-
-		-- Check if the table is spatial and the necessary columns are in the table (including a geometry column)
-		IF  @IsSpatial = 1
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @XColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @YColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SizeColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SpatialColumn AND Object_ID = Object_ID(@TempTable))
-		AND EXISTS(SELECT * FROM sys.columns WHERE user_type_id = 129 AND Object_ID = Object_ID(@TempTable))
-		BEGIN
-
-			IF @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Determining spatial extent ...'
-
-			-- Retrieve the geometric extent values and store as variables
-			SET @sqlcommand = 'SELECT @xMin = MIN(' + @XColumn + '), ' +
-									 '@yMin = MIN(' + @YColumn + '), ' +
-									 '@xMax = MAX(' + @XColumn + ') + MAX(' + @SizeColumn + '), ' +
-									 '@yMax = MAX(' + @YColumn + ') + MAX(' + @SizeColumn + ') ' +
-									 'FROM ' + @Schema + '.' + @TempTable
-
-			SET @params =	'@xMin int OUTPUT, ' +
-							'@yMin int OUTPUT, ' +
-							'@xMax int OUTPUT, ' +
-							'@yMax int OUTPUT'
-		
-			EXEC sp_executesql @sqlcommand, @params,
-				@xMin = @X1 OUTPUT, @yMin = @Y1 OUTPUT, @xMax = @X2 OUTPUT, @yMax = @Y2 OUTPUT
-		
-			If @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Inserting the MapInfo MapCatalog entry ...'
-
-			-- Check if the rendition column is in the table
-			IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'MI_STYLE' AND Object_ID = Object_ID(@TempTable))
-			BEGIN
-				SET @sqlcommand = 'ALTER TABLE ' + @TempTable + ' ADD MI_STYLE varchar(254) NULL'
-				EXEC (@sqlcommand)
-			END
-			
-			-- Adding table to MapInfo MapCatalog
-			INSERT INTO [MAPINFO].[MAPINFO_MAPCATALOG]
-				([SPATIALTYPE]
-				,[TABLENAME]
-				,[OWNERNAME]
-				,[SPATIALCOLUMN]
-				,[DB_X_LL]
-				,[DB_Y_LL]
-				,[DB_X_UR]
-				,[DB_Y_UR]
-				,[COORDINATESYSTEM]
-				,[SYMBOL]
-				,[XCOLUMNNAME]
-				,[YCOLUMNNAME]
-				,[RENDITIONTYPE]
-				,[RENDITIONCOLUMN]
-				,[RENDITIONTABLE]
-				,[NUMBER_ROWS]
-				,[VIEW_X_LL]
-				,[VIEW_Y_LL]
-				,[VIEW_X_UR]
-				,[VIEW_Y_UR])
-			VALUES
-				(17.3
-				,@TempTable
-				,@Schema
-				,@SpatialColumn
-				,@X1
-				,@Y1
-				,@X2
-				,@Y2
-				,@CoordSystem
-				,'Pen (1,2,0)  Brush (1,16777215,16777215)'
-				,NULL
-				,NULL
-				,NULL
-				,'MI_STYLE'
-				,NULL
-				,@RecCnt
-				,NULL
-				,NULL
-				,NULL
-				,NULL)
-		END
-		ELSE
-		BEGIN
-
-			IF @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is non-spatial or required columns are missing.'
-
-		END
-
-	END
-	ELSE
-	-- If the MapInfo MapCatalog doesn't exist then skip updating it
-	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'MapInfo MapCatalog not found - skipping update ...'
-	END
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'

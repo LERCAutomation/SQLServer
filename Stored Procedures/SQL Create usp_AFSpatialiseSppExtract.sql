@@ -50,6 +50,10 @@ GO
 
   Created:			Nov 2012
 
+ *****************  Version 6  *****************
+ Author: Andy Foy		Date: 25/07/2016
+ A. Added clearer comments.
+
  *****************  Version 5  *****************
  Author: Andy Foy		Date: 19/12/2015
  A. Adjust spatial index settings to maximise performance.
@@ -89,6 +93,10 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
+	/*---------------------------------------------------------------------------*\
+		Set any default parameter values and declare any variables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @debug int
 	Set @debug = 1
 
@@ -100,8 +108,12 @@ BEGIN
 
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
+	DECLARE @RecCnt Int
 
-	-- Lookup table column names and spatial variables from Spatial_Tables
+	/*---------------------------------------------------------------------------*\
+		Lookup table column names and spatial variables from Spatial_Tables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @IsSpatial bit
 	DECLARE @XColumn varchar(32), @YColumn varchar(32), @SizeColumn varchar(32), @SpatialColumn varchar(32)
 	DECLARE @SRID int, @CoordSystem varchar(254)
@@ -135,6 +147,10 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @SRID OUTPUT, @O7 = @CoordSystem OUTPUT
 	
+	/*---------------------------------------------------------------------------*\
+		Add new field indexes (if they don't already exist)
+	\*---------------------------------------------------------------------------*/
+
 	-- Add a new non-clustered index on the XColumn field if it doesn't already exists
 	if not exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @XColumn)
 	BEGIN
@@ -168,7 +184,10 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Drop the spatial index on the geometry field if it already exists
+	/*---------------------------------------------------------------------------*\
+		Drop the spatial index on the geometry field (if it already exists)
+	\*---------------------------------------------------------------------------*/
+
 	if exists (select name from sys.indexes where name = 'SIndex_' + @Table + '_' + @SpatialColumn)
 	BEGIN
 		If @debug = 1
@@ -177,6 +196,10 @@ BEGIN
 		SET @sqlcommand = 'DROP INDEX SIndex_' + @Table + '_' + @SpatialColumn + ' ON ' + @Schema + '.' + @Table
 		EXEC (@sqlcommand)
 	END
+
+	/*---------------------------------------------------------------------------*\
+		Add new MapInfo mandatory fields (if they don't already exist)
+	\*---------------------------------------------------------------------------*/
 
 	-- Add a new MapInfo style field if it doesn't already exists
 	if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_STYLE')
@@ -212,7 +235,10 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 	
-	-- Add a new geometry field if it doesn't already exists
+	/*---------------------------------------------------------------------------*\
+		Add a new geometry field (if it doesn't already exist)
+	\*---------------------------------------------------------------------------*/
+
 	if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = @SpatialColumn)
 	BEGIN
 		If @debug = 1
@@ -223,114 +249,135 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Drop the synonym for the table passed to the procedure if it already exists
-	if exists (select name from sys.synonyms where name = 'Species_Temp')
-	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping table synonym ...'
+	/*---------------------------------------------------------------------------*\
+		Set the geometry field for points
+	\*---------------------------------------------------------------------------*/
 
-		Set @sqlCommand = 'DROP SYNONYM Species_Temp'
-		EXEC (@sqlcommand)
-	END
-
-	-- Create a synonym for the table passed to the procedure
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating table synonym ...'
-	Set @sqlCommand = 'CREATE SYNONYM Species_Temp' +
-		' FOR ' + @Schema + '.' + @Table
-	EXEC (@sqlcommand)
-
-	-- Drop the view for the table (via the synonym) if it already exists
-	if exists (select table_name from INFORMATION_SCHEMA.VIEWS where TABLE_NAME = 'Species_Temp_View')
-	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping table view ...'
-
-		Set @sqlCommand = 'DROP VIEW Species_Temp_View'
-		EXEC (@sqlcommand)
-	END
-
-	-- Create a view for the table (via the synonym)
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating table view ...'
-
-	Set @sqlCommand = 'CREATE VIEW Species_Temp_View' +
-		' AS SELECT ' + @XColumn + ' As XCOORD,' +
-		' ' + @YColumn + ' As YCOORD,' +
-		' ' + @SizeColumn + ' As GRIDSIZE,' +
-		' ' + @SpatialColumn + ' As SP_GEOMETRY' +
-		' FROM Species_Temp'
-	EXEC (@sqlcommand)
-
-	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Setting valid point geometries ...'
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the lower left corner of the grid square
 	If @PointPos = 1
 	BEGIN
-		UPDATE Species_Temp_View
-			SET SP_GEOMETRY = geometry::STPointFromText('POINT(' +
-			dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE) + ')', @SRID)
-			WHERE XCOORD >= @XMin
-			AND XCOORD <= @XMax
-			AND YCOORD >= @YMin
-			AND YCOORD <= @YMax
-			AND GRIDSIZE >= @SizeMin
-			AND GRIDSIZE <= @SizeMax
-			AND GRIDSIZE <= @PointMax
+
+		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @SpatialTable + ' ' +
+						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
+						  'dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) ' +
+						  'dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
+						  'WHERE XCOORD >= ' + @XMin +
+						  ' AND XCOORD <= ' + @XMax + 
+						  ' AND YCOORD >= ' + @YMin +
+						  ' AND YCOORD <= ' + @YMax +
+						  ' AND GRIDSIZE >= ' + @SizeMin +
+						  ' AND GRIDSIZE <= ' + @SizeMax +
+						  ' AND GRIDSIZE <= ' + @PointMax
+
+		EXEC sp_executesql @sqlcommand
+
+		Set @RecCnt = @@ROWCOUNT
+
 	END
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the middle of the grid square
 	If @PointPos = 2
 	BEGIN
-		UPDATE Species_Temp_View
-			SET SP_GEOMETRY = geometry::STPointFromText('POINT(' +
-			dbo.AFReturnMidEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnMidNorthings(YCOORD,GRIDSIZE) + ')', @SRID)
-			WHERE XCOORD >= @XMin
-			AND XCOORD <= @XMax
-			AND YCOORD >= @YMin
-			AND YCOORD <= @YMax
-			AND GRIDSIZE >= @SizeMin
-			AND GRIDSIZE <= @SizeMax
-			AND GRIDSIZE <= @PointMax
+
+		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
+						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
+						  'dbo.AFReturnMidEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						  'dbo.AFReturnMidNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
+						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
+						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
+						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
+						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
+
+		EXEC sp_executesql @sqlcommand
+
+		Set @RecCnt = @@ROWCOUNT
+
 	END
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the upper right corner of the grid square
 	If @PointPos = 3
 	BEGIN
-		UPDATE Species_Temp_View
-			SET SP_GEOMETRY = geometry::STPointFromText('POINT(' +
-			dbo.AFReturnUpperEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnUpperNorthings(YCOORD,GRIDSIZE) + ')', @SRID)
-			WHERE XCOORD >= @XMin
-			AND XCOORD <= @XMax
-			AND YCOORD >= @YMin
-			AND YCOORD <= @YMax
-			AND GRIDSIZE >= @SizeMin
-			AND GRIDSIZE <= @SizeMax
-			AND GRIDSIZE <= @PointMax
+
+		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @SpatialTable + ' ' +
+						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
+						  'dbo.AFReturnUpperEastings(XCOORD,GRIDSIZE) ' +
+						  'dbo.AFReturnUpperNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
+						  'WHERE XCOORD >= ' + @XMin +
+						  ' AND XCOORD <= ' + @XMax + 
+						  ' AND YCOORD >= ' + @YMin +
+						  ' AND YCOORD <= ' + @YMax +
+						  ' AND GRIDSIZE >= ' + @SizeMin +
+						  ' AND GRIDSIZE <= ' + @SizeMax +
+						  ' AND GRIDSIZE <= ' + @PointMax
+
+		EXEC sp_executesql @sqlcommand
+
+		Set @RecCnt = @@ROWCOUNT
+
 	END
 
-	-- Set the geometry for polygons based on the Xcolumn, YColumn and SizeColumn values
+	/*---------------------------------------------------------------------------*\
+		Report the number of point records spatialised
+	\*---------------------------------------------------------------------------*/
+
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' point records spatialised ...'
+
+	/*---------------------------------------------------------------------------*\
+		Set the geometry field for polygons
+	\*---------------------------------------------------------------------------*/
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Setting valid polygon geometries ...'
 
-	UPDATE Species_Temp_View
-		SET SP_GEOMETRY = geometry::STPolyFromText('POLYGON((' +
-		dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE) + ', ' +
-		dbo.AFReturnUpperEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE) + ', ' +
-		dbo.AFReturnUpperEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnUpperNorthings(YCOORD,GRIDSIZE) + ', ' +
-		dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnUpperNorthings(YCOORD,GRIDSIZE) + ', ' +
-		dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) + ' ' + dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE) + '))', @SRID)
-		WHERE XCOORD >= @XMin
-		AND XCOORD <= @XMax
-		AND YCOORD >= @YMin
-		AND YCOORD <= @YMax
-		AND GRIDSIZE >= @SizeMin
-		AND GRIDSIZE <= @SizeMax
-		AND GRIDSIZE > @PointMax
+	SET @sqlCommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
+						'SET ' + @SpatialColumn + ' = geometry::STPolyFromText(''POLYGON (('' + ' +
+						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						'''))'', ' + CAST(@SRID As varchar) + ') ' +
+						'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
+						' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
+						' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
+						' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
+						' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
+						' AND ' + @SizeColumn + ' > ' + CAST(@PointMax As varchar)
+
+	EXEC sp_executesql @sqlcommand
+
+	Set @RecCnt = @@ROWCOUNT
+
+	/*---------------------------------------------------------------------------*\
+		Report the number of polygon records spatialised
+	\*---------------------------------------------------------------------------*/
+
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' polygon records spatialised ...'
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Determining spatial extent ...'
 
-	-- Calculate the geometric extent of the records (plus their precision)
+	/*---------------------------------------------------------------------------*\
+		Calculate the geometric extent of the records (plus their precision)
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE
 		@X1 int,
 		@X2 int,
@@ -338,12 +385,29 @@ BEGIN
 		@Y2 int
 
 	-- Retrieve the geometric extent values and store as variables
-	SELECT  @X1 = MIN(XCOORD),
-			@Y1 = MIN(YCOORD),
-			@X2 = MAX(XCOORD) + MAX(GRIDSIZE),
-			@Y2 = MAX(YCOORD) + MAX(GRIDSIZE)
-	From Species_Temp_View
-		WHERE XCOORD >= @XMin AND XCOORD <= @XMax AND YCOORD >= @YMin AND YCOORD <= @YMax AND GRIDSIZE >= @SizeMin AND GRIDSIZE <= @SizeMax
+	SET @sqlcommand = 'SELECT @O1 = MIN(' + @XColumn + '), ' +
+							 '@O2 = MIN(' + @YColumn + '), ' +
+							 '@O3 = MAX(' + @XColumn + ') + MAX(' + @SizeColumn + '), ' +
+							 '@O4 = MAX(' + @YColumn + ') + MAX(' + @SizeColumn + ')' +
+						'FROM ' + @Schema + '.' + @Table + ' ' +
+						'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
+						' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
+						' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
+						' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
+						' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar)
+
+	SET @params =	'@O1 int OUTPUT, ' +
+					'@O2 int OUTPUT, ' +
+					'@O3 int OUTPUT, ' +
+					'@O4 int OUTPUT'
+		
+	EXEC sp_executesql @sqlcommand, @params,
+		@O1 = @X1 OUTPUT, @O2 = @Y1 OUTPUT, @O3 = @X2 OUTPUT, @O4 = @Y2 OUTPUT
+
+	/*---------------------------------------------------------------------------*\
+		Create the spatial index
+	\*---------------------------------------------------------------------------*/
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating spatial index ...'
@@ -361,83 +425,13 @@ BEGIN
 		')'
 	EXEC (@sqlcommand)
 
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping the synonym and view ...'
+	/*---------------------------------------------------------------------------*\
+		Update the MapInfo MapCatalog if it exists
+	\*---------------------------------------------------------------------------*/
 
-	-- Drop the table synonym
-	DROP SYNONYM Species_Temp
-
-	-- Drop the table view
-	DROP View Species_Temp_View
-
-	-- If the MapInfo MapCatalog exists then update it
-	if exists (select TABLE_NAME from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = 'MAPINFO' and TABLE_NAME = 'MAPINFO_MAPCATALOG')
-	BEGIN
-
-		-- Delete the MapInfo MapCatalog entry if it already exists
-		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @Table)
-		BEGIN
-			If @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
-			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
-				' WHERE TABLENAME = ''' + @Table + ''''
-			EXEC (@sqlcommand)
-		END
-
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Inserting the MapInfo MapCatalog entry ...'
-
-		-- Adding table to MapInfo MapCatalog
-		INSERT INTO [MAPINFO].[MAPINFO_MAPCATALOG]
-			([SPATIALTYPE]
-			,[TABLENAME]
-			,[OWNERNAME]
-			,[SPATIALCOLUMN]
-			,[DB_X_LL]
-			,[DB_Y_LL]
-			,[DB_X_UR]
-			,[DB_Y_UR]
-			,[COORDINATESYSTEM]
-			,[SYMBOL]
-			,[XCOLUMNNAME]
-			,[YCOLUMNNAME]
-			,[RENDITIONTYPE]
-			,[RENDITIONCOLUMN]
-			,[RENDITIONTABLE]
-			,[NUMBER_ROWS]
-			,[VIEW_X_LL]
-			,[VIEW_Y_LL]
-			,[VIEW_X_UR]
-			,[VIEW_Y_UR])
-		 VALUES
-			(17.3
-			,@Table
-			,@Schema
-			,@SpatialColumn
-			,@X1
-			,@Y1
-			,@X2
-			,@Y2
-			,@CoordSystem
-			,'Pen (1,2,0)  Brush (1,16777215,16777215)'
-			,'NO_COLUMN'
-			,'NO_COLUMN'
-			,NULL
-			,'MI_STYLE'
-			,NULL
-			,NULL
-			,NULL
-			,NULL
-			,NULL
-			,NULL)
-
-	END
-	ELSE
-	-- If the MapInfo MapCatalog doesn't exist then skip updating it
-	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'MapInfo MapCatalog not found - skipping update ...'
-	END
+	SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @Table + ''', ''' + @XColumn + ''', ''' + @YColumn +
+		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+	EXEC (@sqlcommand)
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'

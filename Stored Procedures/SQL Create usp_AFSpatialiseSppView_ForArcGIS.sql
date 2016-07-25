@@ -51,6 +51,10 @@ GO
 
   Created:			Apr 2016
 
+ *****************  Version 2  *****************
+ Author: Andy Foy		Date: 25/07/2016
+ A. Added clearer comments.
+
  *****************  Version 1  *****************
  Author: Andy Foy		Date: 18/04/2016
  A. Initial version based on AFSpatialiseSppExtract.
@@ -80,6 +84,10 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
+	/*---------------------------------------------------------------------------*\
+		Set any default parameter values and declare any variables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @debug int
 	Set @debug = 1
 
@@ -92,7 +100,10 @@ BEGIN
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
 
-	-- Lookup table column names and spatial variables from Spatial_Tables
+	/*---------------------------------------------------------------------------*\
+		Lookup table column names and spatial variables from Spatial_Tables
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE @IsSpatial bit
 	DECLARE @XColumn varchar(32), @YColumn varchar(32), @SizeColumn varchar(32), @SpatialColumn varchar(32)
 	DECLARE @SRID int, @CoordSystem varchar(254)
@@ -126,6 +137,10 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @SRID OUTPUT, @O7 = @CoordSystem OUTPUT
 	
+	/*---------------------------------------------------------------------------*\
+		Add new field indexes (if they don't already exist)
+	\*---------------------------------------------------------------------------*/
+
 	-- Add a new non-clustered index on the XColumn field if it doesn't already exists
 	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn)
 	BEGIN
@@ -159,7 +174,10 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Drop the spatial index on the geometry field if it already exists
+	/*---------------------------------------------------------------------------*\
+		Drop the spatial index on the geometry field (if it already exists)
+	\*---------------------------------------------------------------------------*/
+
 	if exists (select name from sys.indexes where name = 'SIndex_' + @View + '_' + @SpatialColumn)
 	BEGIN
 		If @debug = 1
@@ -169,7 +187,10 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Add a new geometry field if it doesn't already exists
+	/*---------------------------------------------------------------------------*\
+		Add a new geometry field (if it doesn't already exist)
+	\*---------------------------------------------------------------------------*/
+
 	if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = @SpatialColumn)
 	BEGIN
 		If @debug = 1
@@ -180,14 +201,19 @@ BEGIN
 		EXEC (@sqlcommand)
 	END
 
-	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	/*---------------------------------------------------------------------------*\
+		Set the geometry field for points
+	\*---------------------------------------------------------------------------*/
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Setting valid point geometries ...'
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the lower left corner of the grid square
 	If @PointPos = 1
 	BEGIN
 
-		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @SpatialTable + ' ' +
+		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
 						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
 						  'dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) ' +
 						  'dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
@@ -203,6 +229,8 @@ BEGIN
 
 	END
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the middle of the grid square
 	If @PointPos = 2
 	BEGIN
 
@@ -222,9 +250,11 @@ BEGIN
 
 	END
 
+	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
+	-- at the upper right corner of the grid square
 	If @PointPos = 3
 	BEGIN
-		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @SpatialTable + ' ' +
+		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
 						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
 						  'dbo.AFReturnUpperEastings(XCOORD,GRIDSIZE) ' +
 						  'dbo.AFReturnUpperNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
@@ -240,7 +270,10 @@ BEGIN
 
 	END
 
-	-- Set the geometry for polygons based on the Xcolumn, YColumn and SizeColumn values
+	/*---------------------------------------------------------------------------*\
+		Set the geometry field for polygons
+	\*---------------------------------------------------------------------------*/
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Setting valid polygon geometries ...'
 
@@ -270,7 +303,10 @@ BEGIN
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Determining spatial extent ...'
 
-	-- Calculate the geometric extent of the records (plus their precision)
+	/*---------------------------------------------------------------------------*\
+		Calculate the geometric extent of the records (plus their precision)
+	\*---------------------------------------------------------------------------*/
+
 	DECLARE
 		@X1 int,
 		@X2 int,
@@ -298,6 +334,10 @@ BEGIN
 	EXEC sp_executesql @sqlcommand, @params,
 		@O1 = @X1 OUTPUT, @O2 = @Y1 OUTPUT, @O3 = @X2 OUTPUT, @O4 = @Y2 OUTPUT
 
+	/*---------------------------------------------------------------------------*\
+		Create the spatial index
+	\*---------------------------------------------------------------------------*/
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating spatial index ...'
 
@@ -313,6 +353,13 @@ BEGIN
 		' CELLS_PER_OBJECT = 64' +
 		')'
 	EXEC (@sqlcommand)
+
+	/*---------------------------------------------------------------------------*\
+		Report the number of records spatialised
+	\*---------------------------------------------------------------------------*/
+
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' point records spatialised ...'
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'
