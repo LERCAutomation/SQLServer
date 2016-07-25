@@ -51,7 +51,7 @@ GO
  *****************  Version 6  *****************
  Author: Andy Foy		Date: 11/07/2016
  A. Make sure temporary index table is dropped before
-    .
+    deleting table.
 
  *****************  Version 5  *****************
  Author: Andy Foy		Date: 14/03/2016
