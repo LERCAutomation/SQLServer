@@ -99,6 +99,7 @@ BEGIN
 
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
+	DECLARE @RecCnt Int
 
 	/*---------------------------------------------------------------------------*\
 		Lookup table column names and spatial variables from Spatial_Tables
@@ -214,18 +215,20 @@ BEGIN
 	BEGIN
 
 		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
-						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
-						  'dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) ' +
-						  'dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
-						  'WHERE XCOORD >= ' + @XMin +
-						  ' AND XCOORD <= ' + @XMax + 
-						  ' AND YCOORD >= ' + @YMin +
-						  ' AND YCOORD <= ' + @YMax +
-						  ' AND GRIDSIZE >= ' + @SizeMin +
-						  ' AND GRIDSIZE <= ' + @SizeMax +
-						  ' AND GRIDSIZE <= ' + @PointMax
+						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
+						  'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						  'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
+						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
+						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
+						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
+						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
 
 		EXEC sp_executesql @sqlcommand
+
+		Set @RecCnt = @@ROWCOUNT
 
 	END
 
@@ -248,6 +251,8 @@ BEGIN
 
 		EXEC sp_executesql @sqlcommand
 
+		Set @RecCnt = @@ROWCOUNT
+
 	END
 
 	-- Set the geometry for points based on the Xcolumn, YColumn and SizeColumn values
@@ -255,20 +260,29 @@ BEGIN
 	If @PointPos = 3
 	BEGIN
 		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
-						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
-						  'dbo.AFReturnUpperEastings(XCOORD,GRIDSIZE) ' +
-						  'dbo.AFReturnUpperNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
-						  'WHERE XCOORD >= ' + @XMin +
-						  ' AND XCOORD <= ' + @XMax + 
-						  ' AND YCOORD >= ' + @YMin +
-						  ' AND YCOORD <= ' + @YMax +
-						  ' AND GRIDSIZE >= ' + @SizeMin +
-						  ' AND GRIDSIZE <= ' + @SizeMax +
-						  ' AND GRIDSIZE <= ' + @PointMax
+						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
+						  'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						  'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
+						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
+						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
+						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
+						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
 
 		EXEC sp_executesql @sqlcommand
 
+		Set @RecCnt = @@ROWCOUNT
+
 	END
+
+	/*---------------------------------------------------------------------------*\
+		Report the number of point records spatialised
+	\*---------------------------------------------------------------------------*/
+
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' point records spatialised ...'
 
 	/*---------------------------------------------------------------------------*\
 		Set the geometry field for polygons
@@ -299,6 +313,15 @@ BEGIN
 						' AND ' + @SizeColumn + ' > ' + CAST(@PointMax As varchar)
 
 	EXEC sp_executesql @sqlcommand
+
+	Set @RecCnt = @@ROWCOUNT
+
+	/*---------------------------------------------------------------------------*\
+		Report the number of polygon records spatialised
+	\*---------------------------------------------------------------------------*/
+
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' polygon records spatialised ...'
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Determining spatial extent ...'
@@ -353,13 +376,6 @@ BEGIN
 		' CELLS_PER_OBJECT = 64' +
 		')'
 	EXEC (@sqlcommand)
-
-	/*---------------------------------------------------------------------------*\
-		Report the number of records spatialised
-	\*---------------------------------------------------------------------------*/
-
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' point records spatialised ...'
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'

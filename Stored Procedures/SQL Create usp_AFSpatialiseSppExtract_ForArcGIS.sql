@@ -223,17 +223,17 @@ BEGIN
 	If @PointPos = 1
 	BEGIN
 
-		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @SpatialTable + ' ' +
-						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
-						  'dbo.AFReturnLowerEastings(XCOORD,GRIDSIZE) ' +
-						  'dbo.AFReturnLowerNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
-						  'WHERE XCOORD >= ' + @XMin +
-						  ' AND XCOORD <= ' + @XMax + 
-						  ' AND YCOORD >= ' + @YMin +
-						  ' AND YCOORD <= ' + @YMax +
-						  ' AND GRIDSIZE >= ' + @SizeMin +
-						  ' AND GRIDSIZE <= ' + @SizeMax +
-						  ' AND GRIDSIZE <= ' + @PointMax
+		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
+						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
+						  'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						  'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
+						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
+						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
+						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
+						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
 
 		EXEC sp_executesql @sqlcommand
 
@@ -268,17 +268,17 @@ BEGIN
 	-- at the upper right corner of the grid square
 	If @PointPos = 3
 	BEGIN
-		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @SpatialTable + ' ' +
-						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(POINT(''' +
-						  'dbo.AFReturnUpperEastings(XCOORD,GRIDSIZE) ' +
-						  'dbo.AFReturnUpperNorthings(YCOORD,GRIDSIZE))'', ' + @SRID + ') ' +
-						  'WHERE XCOORD >= ' + @XMin +
-						  ' AND XCOORD <= ' + @XMax + 
-						  ' AND YCOORD >= ' + @YMin +
-						  ' AND YCOORD <= ' + @YMax +
-						  ' AND GRIDSIZE >= ' + @SizeMin +
-						  ' AND GRIDSIZE <= ' + @SizeMax +
-						  ' AND GRIDSIZE <= ' + @PointMax
+		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
+						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
+						  'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						  'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
+						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
+						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
+						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
+						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
+						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
 
 		EXEC sp_executesql @sqlcommand
 

@@ -215,7 +215,7 @@ BEGIN
 	If @WhereClause <> '' AND @WhereClause NOT LIKE 'FROM %'
 		SET @WhereClause = ' WHERE (' + @WhereClause + ')'
 	ELSE
-		SET @WhereClause = REPLACE(@WhereClause, ' WHERE ', ' WHERE (') + ')'
+		SET @WhereClause = REPLACE(@WhereClause, 'WHERE ', 'WHERE (') + ')'
 
 	/*---------------------------------------------------------------------------*\
 		Perform the spatial selection, separating points and polygons into
