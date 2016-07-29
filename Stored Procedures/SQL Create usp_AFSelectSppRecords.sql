@@ -190,7 +190,7 @@ BEGIN
 		Create a temporary survey tags table (if required)
 	\*---------------------------------------------------------------------------*/
 
-	If (@SelectType = 2 AND @PartnerTags <> '') Or (@SelectType = 3 AND @PartnerGeom IS NULL)
+	If @SelectType <> 1
 	BEGIN
 
 		If @PartnerTags IS NULL
