@@ -46,7 +46,11 @@ GO
 					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Jul 2016
+  Last revised:		Aug 2016
+
+ *****************  Version 9  *****************
+ Author: Andy Foy		Date: 01/08/2016
+ A. Fix SQL error when WHERE clause is empty.
 
  *****************  Version 8  *****************
  Author: Andy Foy		Date: 25/07/2016
@@ -122,14 +126,14 @@ BEGIN
 
 	If @Schema = ''
 		SET @Schema = 'dbo'
-	If @ColumnNames = ''
+	If @ColumnNames IS NULL OR @ColumnNames = ''
 		SET @ColumnNames = '*'
 	If @WhereClause IS NULL
-		SET @WhereClause = 0
+		SET @WhereClause = ''
 	If @GroupByClause IS NULL
-		SET @GroupByClause = 0
+		SET @GroupByClause = ''
 	If @OrderByClause IS NULL
-		SET @OrderByClause = 0
+		SET @OrderByClause = ''
 	IF @UserId IS NULL
 		SET @UserId = 'temp'
 	If @Split IS NULL
@@ -212,10 +216,13 @@ BEGIN
 	If @WhereClause NOT LIKE 'FROM %'
 		SET @FromClause = ' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp'
 
-	If @WhereClause <> '' AND @WhereClause NOT LIKE 'FROM %'
-		SET @WhereClause = ' WHERE (' + @WhereClause + ')'
-	ELSE
-		SET @WhereClause = REPLACE(@WhereClause, 'WHERE ', 'WHERE (') + ')'
+	If @WhereClause <> ''
+	BEGIN
+		If @WhereClause LIKE 'FROM %'
+			SET @WhereClause = REPLACE(@WhereClause, 'WHERE ', 'WHERE (') + ')'
+		ELSE
+			SET @WhereClause = ' WHERE (' + @WhereClause + ')'
+	END
 
 	/*---------------------------------------------------------------------------*\
 		Perform the spatial selection, separating points and polygons into
