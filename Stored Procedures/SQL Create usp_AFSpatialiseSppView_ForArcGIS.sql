@@ -38,6 +38,8 @@ GO
 	@Schema			The schema for the table to be spatialised.
 	@Table			The name of the table to be spatialised.
 	@View			The name of the view defining the table's spatial data.
+	@Column			The name of the spatial column name to be used (if different
+					from the default value in the 'Spatial_Tables' table.
 	@XMin			The minimum value for the eastings to be spatialised.
 	@XMin			The maximum value for the eastings to be spatialised.
 	@XMin			The minimum value for the nothings to be spatialised.
@@ -50,6 +52,11 @@ GO
 					2 = Mid, 3 = Upper Right)
 
   Created:			Apr 2016
+
+ *****************  Version 3  *****************
+ Author: Andy Foy		Date: 04/08/2016
+ A. Enable spatial column name to be over-ridden.
+ B. Drop temporary indexes after use.
 
  *****************  Version 2  *****************
  Author: Andy Foy		Date: 25/07/2016
@@ -71,6 +78,7 @@ CREATE PROCEDURE dbo.AFSpatialiseSppView
 	@Schema varchar(50),
 	@Table varchar(50),
 	@View varchar(50),
+	@Column varchar(50),
 	@XMin Int,
 	@XMax Int,
 	@YMin Int,
@@ -138,6 +146,12 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @SRID OUTPUT, @O7 = @CoordSystem OUTPUT
 	
+	/*---------------------------------------------------------------------------*\
+		Over-ride the spatial column (if required)
+	\*---------------------------------------------------------------------------*/
+	if @Column <> ''
+		SET @SpatialColumn = @Column
+
 	/*---------------------------------------------------------------------------*\
 		Add new field indexes (if they don't already exist)
 	\*---------------------------------------------------------------------------*/
@@ -376,6 +390,43 @@ BEGIN
 		' CELLS_PER_OBJECT = 64' +
 		')'
 	EXEC (@sqlcommand)
+
+	/*---------------------------------------------------------------------------*\
+		Drop any field indexes no longer needed
+	\*---------------------------------------------------------------------------*/
+
+	-- Drop the non-clustered index on the XColumn field
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping XColumn field index ...'
+
+		Set @sqlCommand = 'DROP INDEX IX_' + @View + '_' + @XColumn +
+			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
+		EXEC (@sqlcommand)
+	END
+
+	-- Drop the non-clustered index on the YColumn field
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @YColumn)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping YColumn field index ...'
+
+		Set @sqlCommand = 'DROP INDEX IX_' + @View + '_' + @YColumn +
+			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
+		EXEC (@sqlcommand)
+	END
+
+	-- Drop the non-clustered index on the SizeColumn field
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @SizeColumn)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping SizeColumn field index ...'
+
+		Set @sqlCommand = 'DROP INDEX IX_' + @View + '_' + @SizeColumn +
+			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
+		EXEC (@sqlcommand)
+	END
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'

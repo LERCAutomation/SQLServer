@@ -50,6 +50,10 @@ GO
 
   Created:			Nov 2012
 
+ *****************  Version 7  *****************
+ Author: Andy Foy		Date: 04/08/2016
+ A. Drop temporary indexes after use.
+
  *****************  Version 6  *****************
  Author: Andy Foy		Date: 25/07/2016
  A. Added clearer comments.
@@ -385,6 +389,43 @@ BEGIN
 		' CELLS_PER_OBJECT = 64' +
 		')'
 	EXEC (@sqlcommand)
+
+	/*---------------------------------------------------------------------------*\
+		Drop any field indexes no longer needed
+	\*---------------------------------------------------------------------------*/
+
+	-- Drop the non-clustered index on the XColumn field
+	if exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @XColumn)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping XColumn field index ...'
+
+		Set @sqlCommand = 'DROP INDEX IX_' + @Table + '_' + @XColumn +
+			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
+		EXEC (@sqlcommand)
+	END
+
+	-- Drop the non-clustered index on the YColumn field
+	if exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @YColumn)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping YColumn field index ...'
+
+		Set @sqlCommand = 'DROP INDEX IX_' + @Table + '_' + @YColumn +
+			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
+		EXEC (@sqlcommand)
+	END
+
+	-- Drop the non-clustered index on the SizeColumn field
+	if exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @SizeColumn)
+	BEGIN
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping SizeColumn field index ...'
+
+		Set @sqlCommand = 'DROP INDEX IX_' + @Table + '_' + @SizeColumn +
+			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
+		EXEC (@sqlcommand)
+	END
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'
