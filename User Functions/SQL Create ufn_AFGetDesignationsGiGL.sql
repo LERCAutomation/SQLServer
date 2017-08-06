@@ -9,7 +9,7 @@ GO
 /*===========================================================================*\
   Description:	
 		Gets a concatenated string of the Taxon_Designation
-		Status Abbreviations used by DERC for a particular
+		Status Abbreviations used by GiGL for a particular
 		Taxon_List_Item_Key.
 
   Parameters:	
@@ -27,12 +27,12 @@ GO
 \*===========================================================================*/
 
 -- Drop the user function if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFGetDesignationsDERC')
-	DROP FUNCTION dbo.AFGetDesignationsDERC
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFGetDesignationsGiGL')
+	DROP FUNCTION dbo.AFGetDesignationsGiGL
 GO
 
 -- Create the user function
-CREATE FUNCTION [dbo].[AFGetDesignationsDERC]
+CREATE FUNCTION [dbo].[AFGetDesignationsGiGL]
 (
 	@Taxon_List_Item_Key		CHAR(16),
 	@Taxon_Designation_Set_Key	CHAR(16) = NULL
@@ -68,7 +68,7 @@ BEGIN
 	INNER JOIN Taxon_Designation_Type TDT ON TDT.Taxon_Designation_Type_Key = ITD.Taxon_Designation_Type_Key
 	INNER JOIN Taxon_Designation_Set_Item TDSI ON TDSI.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
 	INNER JOIN Taxon_Designation_Set TDS ON TDS.Taxon_Designation_Set_Key = TDSI.Taxon_Designation_Set_Key
-	LEFT JOIN DERC_Taxon_Designation_Types TTDT ON TTDT.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
+	LEFT JOIN GiGL_Taxon_Designation_Types TTDT ON TTDT.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
 
 	WHERE ITD.Taxon_List_Item_Key = @Taxon_List_Item_Key
 	-- Filters by Taxon_Designation_Set if the Key is not null
@@ -89,7 +89,8 @@ BEGIN
 	ORDER BY SortOrder
 	
 	-- Format the list of designations by concatenating similar types
-	RETURN dbo.AFFormatDesignationsDERC(@ReturnValue)
+	--RETURN dbo.AFFormatDesignationsGiGL(@ReturnValue)
+	RETURN @ReturnValue
 
 END
 

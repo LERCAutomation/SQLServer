@@ -3,7 +3,7 @@
   Server table by creating Geometry from X & Y grid reference values and
   a grid reference precision based on a view's spatial deinfition of the table.
   
-  Copyright © 2016 Andy Foy Consulting
+  Copyright © 2016 - 2017 Andy Foy Consulting
   
   This file is used by the 'DataSelector' and 'DataExtractor' tools, versions
   of which are available for MapInfo and ArcGIS.
@@ -30,6 +30,29 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
+-- Drop the procedure if it already exists
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFSpatialiseSppView')
+	DROP PROCEDURE dbo.AFSpatialiseSppView
+GO
+
+-- Create the stored procedure
+CREATE PROCEDURE dbo.AFSpatialiseSppView
+	@Schema varchar(50),
+	@Table varchar(50),
+	@View varchar(50),
+	@XMin Int,
+	@XMax Int,
+	@YMin Int,
+	@YMax Int,
+	@SizeMin Int,
+	@SizeMax Int,
+	@PointMax Int,
+	@PointPos Int,
+	@BuildIndex Int
+
+AS
+BEGIN
+
 /*===========================================================================*\
   Description:		Prepares an existing SQL table that contains spatial data
 					so that it can be used 'spatially' by SQL Server and ArcGIS
@@ -38,8 +61,6 @@ GO
 	@Schema			The schema for the table to be spatialised.
 	@Table			The name of the table to be spatialised.
 	@View			The name of the view defining the table's spatial data.
-	@Column			The name of the spatial column name to be used (if different
-					from the default value in the 'Spatial_Tables' table.
 	@XMin			The minimum value for the eastings to be spatialised.
 	@XMin			The maximum value for the eastings to be spatialised.
 	@XMin			The minimum value for the nothings to be spatialised.
@@ -50,8 +71,25 @@ GO
 					created instead of polygons.
 	@PointPos		The position for plotting points (1 = Lower Left,
 					2 = Mid, 3 = Upper Right)
+	@BuildIndex		If a spatial index should be built (0 = No, 1 = Yes)
 
   Created:			Apr 2016
+
+ *****************  Version 6  *****************
+ Author: Andy Foy		Date: 27/07/2017
+ A. Use view column names for temporary indexes.
+ B. Get the name of the spatial column used by the
+	table from the 'Spatial_Tables' table.
+
+ *****************  Version 5  *****************
+ Author: Andy Foy		Date: 11/05/2017
+ A. Include table name when checking for existing
+ 	spatial index.
+ B. Use table name in spatial index for view.
+
+ *****************  Version 4  *****************
+ Author: Andy Foy		Date: 22/08/2016
+ A. Add option to build spatial indexes or not.
 
  *****************  Version 3  *****************
  Author: Andy Foy		Date: 04/08/2016
@@ -68,28 +106,6 @@ GO
 
 \*===========================================================================*/
 
--- Drop the procedure if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFSpatialiseSppView')
-	DROP PROCEDURE dbo.AFSpatialiseSppView
-GO
-
--- Create the stored procedure
-CREATE PROCEDURE dbo.AFSpatialiseSppView
-	@Schema varchar(50),
-	@Table varchar(50),
-	@View varchar(50),
-	@Column varchar(50),
-	@XMin Int,
-	@XMax Int,
-	@YMin Int,
-	@YMax Int,
-	@SizeMin Int,
-	@SizeMax Int,
-	@PointMax Int,
-	@PointPos Int
-
-AS
-BEGIN
 	SET NOCOUNT ON
 
 	/*---------------------------------------------------------------------------*\
@@ -102,6 +118,9 @@ BEGIN
 	If @PointPos IS NULL OR @PointPos NOT IN (1, 2, 3)
 		SET @PointPos = 1
 
+	If @BuildIndex IS NULL OR @BuildIndex NOT IN (0, 1)
+		SET @BuildIndex = 0
+
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Started.'
 
@@ -110,7 +129,7 @@ BEGIN
 	DECLARE @RecCnt Int
 
 	/*---------------------------------------------------------------------------*\
-		Lookup table column names and spatial variables from Spatial_Tables
+		Lookup view column names and spatial variables from Spatial_Tables
 	\*---------------------------------------------------------------------------*/
 
 	DECLARE @IsSpatial bit
@@ -118,7 +137,7 @@ BEGIN
 	DECLARE @SRID int, @CoordSystem varchar(254)
 	
 	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Retrieving table spatial details ...'
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Retrieving view spatial details ...'
 
 	DECLARE @SpatialTable varchar(100)
 	SET @SpatialTable ='Spatial_Tables'
@@ -132,7 +151,7 @@ BEGIN
 							 '@O6 = SRID, ' +
 							 '@O7 = CoordSystem ' +
 						'FROM ' + @Schema + '.' + @SpatialTable + ' ' +
-						'WHERE TableName = ''' + @View + ''' AND OwnerName = ''' + @Schema + ''''
+						'WHERE TableName = ''' + @View + '_View' + ''' AND OwnerName = ''' + @Schema + ''''
 
 	SET @params =	'@O1 varchar(32) OUTPUT, ' +
 					'@O2 varchar(32) OUTPUT, ' +
@@ -146,12 +165,6 @@ BEGIN
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @SRID OUTPUT, @O7 = @CoordSystem OUTPUT
 	
-	/*---------------------------------------------------------------------------*\
-		Over-ride the spatial column (if required)
-	\*---------------------------------------------------------------------------*/
-	if @Column <> ''
-		SET @SpatialColumn = @Column
-
 	/*---------------------------------------------------------------------------*\
 		Add new field indexes (if they don't already exist)
 	\*---------------------------------------------------------------------------*/
@@ -193,12 +206,12 @@ BEGIN
 		Drop the spatial index on the geometry field (if it already exists)
 	\*---------------------------------------------------------------------------*/
 
-	if exists (select name from sys.indexes where name = 'SIndex_' + @View + '_' + @SpatialColumn)
+	if exists (select name from sys.indexes where name = 'SIndex_' + @Table + '_' + @SpatialColumn AND object_id = (select object_id from sys.objects where name = @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping the spatial index ...'
 
-		SET @sqlcommand = 'DROP INDEX SIndex_' + @View + '_' + @SpatialColumn + ' ON ' + @Schema + '.' + @Table
+		SET @sqlcommand = 'DROP INDEX SIndex_' + @Table + '_' + @SpatialColumn + ' ON ' + @Schema + '.' + @Table
 		EXEC (@sqlcommand)
 	END
 
@@ -372,24 +385,29 @@ BEGIN
 		@O1 = @X1 OUTPUT, @O2 = @Y1 OUTPUT, @O3 = @X2 OUTPUT, @O4 = @Y2 OUTPUT
 
 	/*---------------------------------------------------------------------------*\
-		Create the spatial index
+		Create the spatial index (if required)
 	\*---------------------------------------------------------------------------*/
 
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating spatial index ...'
+	If @BuildIndex = 1
+	BEGIN
 
-	-- Create the spatial index bounded by the geometric extent variables
-	SET @sqlcommand = 'CREATE SPATIAL INDEX SIndex_' + @View + '_' + @SpatialColumn + ' ON ' + @Schema + '.' + @Table + ' ( ' + @SpatialColumn + ' )' + 
-		' WITH ( ' +
-		' BOUNDING_BOX = (XMIN=' + CAST(@X1 As varchar) + ', YMIN=' + CAST(@Y1 As varchar) + ', XMAX=' + CAST(@X2 AS varchar) + ', YMAX=' + CAST(@Y2 As varchar) + '),' +
-		' GRIDS = (' +
-			' LEVEL_1 = HIGH,' +
-			' LEVEL_2 = MEDIUM,' +
-			' LEVEL_3 = MEDIUM,' +
-			' LEVEL_4 = MEDIUM),' +
-		' CELLS_PER_OBJECT = 64' +
-		')'
-	EXEC (@sqlcommand)
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating spatial index ...'
+	
+		-- Create the spatial index bounded by the geometric extent variables
+		SET @sqlcommand = 'CREATE SPATIAL INDEX SIndex_' + @Table + '_' + @SpatialColumn + ' ON ' + @Schema + '.' + @Table + ' ( ' + @SpatialColumn + ' )' + 
+			' WITH ( ' +
+			' BOUNDING_BOX = (XMIN=' + CAST(@X1 As varchar) + ', YMIN=' + CAST(@Y1 As varchar) + ', XMAX=' + CAST(@X2 AS varchar) + ', YMAX=' + CAST(@Y2 As varchar) + '),' +
+			' GRIDS = (' +
+				' LEVEL_1 = HIGH,' +
+				' LEVEL_2 = MEDIUM,' +
+				' LEVEL_3 = MEDIUM,' +
+				' LEVEL_4 = MEDIUM),' +
+			' CELLS_PER_OBJECT = 64' +
+			')'
+		EXEC (@sqlcommand)
+
+	END
 
 	/*---------------------------------------------------------------------------*\
 		Drop any field indexes no longer needed
@@ -432,4 +450,5 @@ BEGIN
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'
 
 END
+
 GO

@@ -3,7 +3,7 @@
   Server table by creating Geometry from X & Y grid reference values and
   a grid reference precision.
   
-  Copyright © 2015 Andy Foy Consulting
+  Copyright © 2015 - 2017 Andy Foy Consulting
   
   This file is used by the 'DataSelector' and 'DataExtractor' tools, versions
   of which are available for MapInfo and ArcGIS.
@@ -30,6 +30,28 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
+-- Drop the procedure if it already exists
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFSpatialiseSppExtract')
+	DROP PROCEDURE dbo.AFSpatialiseSppExtract
+GO
+
+-- Create the stored procedure
+CREATE PROCEDURE dbo.AFSpatialiseSppExtract
+	@Schema varchar(50),
+	@Table varchar(50),
+	@XMin Int,
+	@XMax Int,
+	@YMin Int,
+	@YMax Int,
+	@SizeMin Int,
+	@SizeMax Int,
+	@PointMax Int,
+	@PointPos Int,
+	@BuildIndex Int
+
+AS
+BEGIN
+
 /*===========================================================================*\
   Description:		Prepares an existing SQL table that contains spatial data
 					so that it can be used 'spatially' by SQL Server and ArcGIS
@@ -47,8 +69,18 @@ GO
 					created instead of polygons.
 	@PointPos		The position for plotting points (1 = Lower Left,
 					2 = Mid, 3 = Upper Right)
+	@BuildIndex		If a spatial index should be built (0 = No, 1 = Yes)
 
   Created:			Nov 2012
+
+ *****************  Version 9  *****************
+ Author: Andy Foy		Date: 11/05/2017
+ A. Include table name when checking for existing
+ 	spatial index.
+
+ *****************  Version 8  *****************
+ Author: Andy Foy		Date: 22/08/2016
+ A. Add option to build spatial indexes or not.
 
  *****************  Version 7  *****************
  Author: Andy Foy		Date: 04/08/2016
@@ -75,26 +107,6 @@ GO
 
 \*===========================================================================*/
 
--- Drop the procedure if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFSpatialiseSppExtract')
-	DROP PROCEDURE dbo.AFSpatialiseSppExtract
-GO
-
--- Create the stored procedure
-CREATE PROCEDURE dbo.AFSpatialiseSppExtract
-	@Schema varchar(50),
-	@Table varchar(50),
-	@XMin Int,
-	@XMax Int,
-	@YMin Int,
-	@YMax Int,
-	@SizeMin Int,
-	@SizeMax Int,
-	@PointMax Int,
-	@PointPos Int
-
-AS
-BEGIN
 	SET NOCOUNT ON
 
 	/*---------------------------------------------------------------------------*\
@@ -106,6 +118,9 @@ BEGIN
 
 	If @PointPos IS NULL OR @PointPos NOT IN (1, 2, 3)
 		SET @PointPos = 1
+
+	If @BuildIndex IS NULL OR @BuildIndex NOT IN (0, 1)
+		SET @BuildIndex = 0
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Started.'
@@ -192,7 +207,7 @@ BEGIN
 		Drop the spatial index on the geometry field (if it already exists)
 	\*---------------------------------------------------------------------------*/
 
-	if exists (select name from sys.indexes where name = 'SIndex_' + @Table + '_' + @SpatialColumn)
+	if exists (select name from sys.indexes where name = 'SIndex_' + @Table + '_' + @SpatialColumn AND object_id = (select object_id from sys.objects where name = @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping the spatial index ...'
@@ -371,24 +386,29 @@ BEGIN
 		@O1 = @X1 OUTPUT, @O2 = @Y1 OUTPUT, @O3 = @X2 OUTPUT, @O4 = @Y2 OUTPUT
 
 	/*---------------------------------------------------------------------------*\
-		Create the spatial index
+		Create the spatial index (if required)
 	\*---------------------------------------------------------------------------*/
 
-	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating spatial index ...'
+	If @BuildIndex = 1
+	BEGIN
 
-	-- Create the spatial index bounded by the geometric extent variables
-	SET @sqlcommand = 'CREATE SPATIAL INDEX SIndex_' + @Table + '_' + @SpatialColumn + ' ON ' + @Schema + '.' + @Table + ' ( ' + @SpatialColumn + ' )' + 
-		' WITH ( ' +
-		' BOUNDING_BOX = (XMIN=' + CAST(@X1 As varchar) + ', YMIN=' + CAST(@Y1 As varchar) + ', XMAX=' + CAST(@X2 AS varchar) + ', YMAX=' + CAST(@Y2 As varchar) + '),' +
-		' GRIDS = (' +
-			' LEVEL_1 = HIGH,' +
-			' LEVEL_2 = MEDIUM,' +
-			' LEVEL_3 = MEDIUM,' +
-			' LEVEL_4 = MEDIUM),' +
-		' CELLS_PER_OBJECT = 64' +
-		')'
-	EXEC (@sqlcommand)
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating spatial index ...'
+	
+		-- Create the spatial index bounded by the geometric extent variables
+		SET @sqlcommand = 'CREATE SPATIAL INDEX SIndex_' + @Table + '_' + @SpatialColumn + ' ON ' + @Schema + '.' + @Table + ' ( ' + @SpatialColumn + ' )' + 
+			' WITH ( ' +
+			' BOUNDING_BOX = (XMIN=' + CAST(@X1 As varchar) + ', YMIN=' + CAST(@Y1 As varchar) + ', XMAX=' + CAST(@X2 AS varchar) + ', YMAX=' + CAST(@Y2 As varchar) + '),' +
+			' GRIDS = (' +
+				' LEVEL_1 = HIGH,' +
+				' LEVEL_2 = MEDIUM,' +
+				' LEVEL_3 = MEDIUM,' +
+				' LEVEL_4 = MEDIUM),' +
+			' CELLS_PER_OBJECT = 64' +
+			')'
+		EXEC (@sqlcommand)
+
+	END
 
 	/*---------------------------------------------------------------------------*\
 		Drop any field indexes no longer needed
@@ -431,4 +451,5 @@ BEGIN
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'
 
 END
+
 GO

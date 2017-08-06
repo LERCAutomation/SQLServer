@@ -1,19 +1,19 @@
 ﻿/*===========================================================================*\
-  AFSpatialiseSppExtract is a SQL stored procedure to spatialise a SQL
+  AFSpatialiseSppView is a SQL stored procedure to spatialise a SQL
   Server table by creating Geometry from X & Y grid reference values and
-  a grid reference precision.
+  a grid reference precision based on a view's spatial deinfition of the table.
   
-  Copyright © 2015 - 2017 Andy Foy Consulting
+  Copyright © 2016 - 2017 Andy Foy Consulting
   
   This file is used by the 'DataSelector' and 'DataExtractor' tools, versions
   of which are available for MapInfo and ArcGIS.
   
-  AFSpatialiseSppExtract is free software: you can redistribute it and/or modify
+  AFSpatialiseSppView is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
   
-  AFSpatialiseSppExtract is distributed in the hope that it will be useful,
+  AFSpatialiseSppView is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -31,14 +31,15 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 -- Drop the procedure if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFSpatialiseSppExtract')
-	DROP PROCEDURE dbo.AFSpatialiseSppExtract
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFSpatialiseSppView')
+	DROP PROCEDURE dbo.AFSpatialiseSppView
 GO
 
 -- Create the stored procedure
-CREATE PROCEDURE dbo.AFSpatialiseSppExtract
+CREATE PROCEDURE dbo.AFSpatialiseSppView
 	@Schema varchar(50),
 	@Table varchar(50),
+	@View varchar(50),
 	@XMin Int,
 	@XMax Int,
 	@YMin Int,
@@ -59,6 +60,7 @@ BEGIN
   Parameters:
 	@Schema			The schema for the table to be spatialised.
 	@Table			The name of the table to be spatialised.
+	@View			The name of the view defining the table's spatial data.
 	@XMin			The minimum value for the eastings to be spatialised.
 	@XMin			The maximum value for the eastings to be spatialised.
 	@XMin			The minimum value for the nothings to be spatialised.
@@ -71,39 +73,36 @@ BEGIN
 					2 = Mid, 3 = Upper Right)
 	@BuildIndex		If a spatial index should be built (0 = No, 1 = Yes)
 
-  Created:			Nov 2012
+  Created:			Apr 2016
 
- *****************  Version 9  *****************
+ *****************  Version 6  *****************
+ Author: Andy Foy		Date: 27/07/2017
+ A. Use view column names for temporary indexes.
+ B. Get the name of the spatial column used by the
+	table from the 'Spatial_Tables' table.
+
+ *****************  Version 5  *****************
  Author: Andy Foy		Date: 11/05/2017
  A. Include table name when checking for existing
  	spatial index.
+ B. Use table name in spatial index for view.
 
- *****************  Version 8  *****************
+ *****************  Version 4  *****************
  Author: Andy Foy		Date: 22/08/2016
  A. Add option to build spatial indexes or not.
 
- *****************  Version 7  *****************
+ *****************  Version 3  *****************
  Author: Andy Foy		Date: 04/08/2016
- A. Drop temporary indexes after use.
+ A. Enable spatial column name to be over-ridden.
+ B. Drop temporary indexes after use.
 
- *****************  Version 6  *****************
+ *****************  Version 2  *****************
  Author: Andy Foy		Date: 25/07/2016
  A. Added clearer comments.
 
- *****************  Version 5  *****************
- Author: Andy Foy		Date: 19/12/2015
- A. Adjust spatial index settings to maximise performance.
-
- *****************  Version 4  *****************
- Author: Andy Foy		Date: 21/09/2015
- A. Remove hard-coded column names.
- B. Lookup table column names and spatial variables
-	from Spatial_Tables.
-
- *****************  Version 3  *****************
- Author: Andy Foy		Date: 04/06/2015
- A. Add parameter for maximum size for plotting points.
- B. Plot points at lower left position not mid cell.
+ *****************  Version 1  *****************
+ Author: Andy Foy		Date: 18/04/2016
+ A. Initial version based on AFSpatialiseSppExtract.
 
 \*===========================================================================*/
 
@@ -130,7 +129,7 @@ BEGIN
 	DECLARE @RecCnt Int
 
 	/*---------------------------------------------------------------------------*\
-		Lookup table column names and spatial variables from Spatial_Tables
+		Lookup view column names and spatial variables from Spatial_Tables
 	\*---------------------------------------------------------------------------*/
 
 	DECLARE @IsSpatial bit
@@ -138,7 +137,7 @@ BEGIN
 	DECLARE @SRID int, @CoordSystem varchar(254)
 	
 	If @debug = 1
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Retrieving table spatial details ...'
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Retrieving view spatial details ...'
 
 	DECLARE @SpatialTable varchar(100)
 	SET @SpatialTable ='Spatial_Tables'
@@ -152,7 +151,7 @@ BEGIN
 							 '@O6 = SRID, ' +
 							 '@O7 = CoordSystem ' +
 						'FROM ' + @Schema + '.' + @SpatialTable + ' ' +
-						'WHERE TableName = ''' + @Table + ''' AND OwnerName = ''' + @Schema + ''''
+						'WHERE TableName = ''' + @View + '_View' + ''' AND OwnerName = ''' + @Schema + ''''
 
 	SET @params =	'@O1 varchar(32) OUTPUT, ' +
 					'@O2 varchar(32) OUTPUT, ' +
@@ -171,34 +170,34 @@ BEGIN
 	\*---------------------------------------------------------------------------*/
 
 	-- Add a new non-clustered index on the XColumn field if it doesn't already exists
-	if not exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @XColumn)
+	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn)
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding XColumn field index ...'
 
-		Set @sqlCommand = 'CREATE INDEX IX_' + @Table + '_' + @XColumn +
+		Set @sqlCommand = 'CREATE INDEX IX_' + @View + '_' + @XColumn +
 			' ON ' + @Schema + '.' + @Table +' (' + @XColumn+ ')'
 		EXEC (@sqlcommand)
 	END
 	
 	-- Add a new non-clustered index on the YColumn field if it doesn't already exists
-	if not exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @YColumn)
+	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @YColumn)
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding YColumn field index ...'
 
-		Set @sqlCommand = 'CREATE INDEX IX_' + @Table + '_' + @YColumn +
+		Set @sqlCommand = 'CREATE INDEX IX_' + @View + '_' + @YColumn +
 			' ON ' + @Schema + '.' + @Table +' (' + @YColumn+ ')'
 		EXEC (@sqlcommand)
 	END
 
 	-- Add a new non-clustered index on the SizeColumn field if it doesn't already exists
-	if not exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @SizeColumn)
+	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @SizeColumn)
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding SizeColumn field index ...'
 
-		Set @sqlCommand = 'CREATE INDEX IX_' + @Table + '_' + @SizeColumn +
+		Set @sqlCommand = 'CREATE INDEX IX_' + @View + '_' + @SizeColumn +
 			' ON ' + @Schema + '.' + @Table +' (' + @SizeColumn+ ')'
 		EXEC (@sqlcommand)
 	END
@@ -450,49 +449,49 @@ BEGIN
 	END
 
 	/*---------------------------------------------------------------------------*\
-		Update the MapInfo MapCatalog if it exists
-	\*---------------------------------------------------------------------------*/
-
-	SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @Table + ''', ''' + @XColumn + ''', ''' + @YColumn +
-		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
-	EXEC (@sqlcommand)
-
-	/*---------------------------------------------------------------------------*\
 		Drop any field indexes no longer needed
 	\*---------------------------------------------------------------------------*/
 
 	-- Drop the non-clustered index on the XColumn field
-	if exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @XColumn)
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn)
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping XColumn field index ...'
 
-		Set @sqlCommand = 'DROP INDEX IX_' + @Table + '_' + @XColumn +
+		Set @sqlCommand = 'DROP INDEX IX_' + @View + '_' + @XColumn +
 			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
 		EXEC (@sqlcommand)
 	END
 
 	-- Drop the non-clustered index on the YColumn field
-	if exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @YColumn)
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @YColumn)
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping YColumn field index ...'
 
-		Set @sqlCommand = 'DROP INDEX IX_' + @Table + '_' + @YColumn +
+		Set @sqlCommand = 'DROP INDEX IX_' + @View + '_' + @YColumn +
 			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
 		EXEC (@sqlcommand)
 	END
 
 	-- Drop the non-clustered index on the SizeColumn field
-	if exists (select name from sys.indexes where name = 'IX_' + @Table + '_' + @SizeColumn)
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @SizeColumn)
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping SizeColumn field index ...'
 
-		Set @sqlCommand = 'DROP INDEX IX_' + @Table + '_' + @SizeColumn +
+		Set @sqlCommand = 'DROP INDEX IX_' + @View + '_' + @SizeColumn +
 			' ON ' + @Schema + '.' + @Table + ' WITH ( ONLINE = OFF )'
 		EXEC (@sqlcommand)
 	END
+
+	/*---------------------------------------------------------------------------*\
+		Update the MapInfo MapCatalog if it exists
+	\*---------------------------------------------------------------------------*/
+
+	SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @View + ''', ''' + @XColumn + ''', ''' + @YColumn +
+		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+	EXEC (@sqlcommand)
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'

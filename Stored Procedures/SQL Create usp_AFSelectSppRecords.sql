@@ -3,7 +3,7 @@
   SQL Server table containing a subset of records based on their spatial
   intersection with a given record in another table.
   
-  Copyright © 2012-2013, 2015-2016 Andy Foy Consulting
+  Copyright © 2012-2013, 2015-2017 Andy Foy Consulting
   
   This file is used by the 'DataExtractor' tool, versions of which are
   available for MapInfo and ArcGIS.
@@ -30,6 +30,24 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
+-- Drop the procedure if it already exists
+If EXISTS (SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = 'dbo' AND ROUTINE_NAME = 'AFSelectSppRecords')
+	DROP PROCEDURE dbo.AFSelectSppRecords
+GO
+
+-- Create the stored procedure
+CREATE PROCEDURE dbo.AFSelectSppRecords
+	@Schema varchar(50),
+	@PartnerTable varchar(50),
+	@PartnerColumn varchar(50),
+	@Partner varchar(50),
+	@TagsColumn varchar(50),
+	@SelectType int,
+	@SpeciesTable varchar(50),
+	@UserId varchar(50)
+AS
+BEGIN
+
 /*===========================================================================*\
   Description:		Select species records that intersect with the partner
 					polygon(s) passed by the calling routine.
@@ -46,7 +64,17 @@ GO
 	@UserId			The userid of the user executing the selection.
 
   Created:			Nov 2012
-  Last revised: 	Jul 2016
+  Last revised: 	Jul 2017
+
+ *****************  Version 9  *****************
+ Author: Andy Foy		Date: 28/07/2017
+ A. Force temporary tables to collate using the
+	current database standard.
+
+ *****************  Version 8  *****************
+ Author: Andy Foy		Date: 03/05/2017
+ A. Simplify (reduce) partner geometry slightly
+	to speed up spatial selection.
 
  *****************  Version 7  *****************
  Author: Andy Foy		Date: 25/07/2016
@@ -89,24 +117,6 @@ GO
  A. Initial version of code.
 
 \*===========================================================================*/
-
--- Drop the procedure if it already exists
-If EXISTS (SELECT ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = 'dbo' AND ROUTINE_NAME = 'AFSelectSppRecords')
-	DROP PROCEDURE dbo.AFSelectSppRecords
-GO
-
--- Create the stored procedure
-CREATE PROCEDURE dbo.AFSelectSppRecords
-	@Schema varchar(50),
-	@PartnerTable varchar(50),
-	@PartnerColumn varchar(50),
-	@Partner varchar(50),
-	@TagsColumn varchar(50),
-	@SelectType int,
-	@SpeciesTable varchar(50),
-	@UserId varchar(50)
-AS
-BEGIN
 
 	SET NOCOUNT ON
 
@@ -175,7 +185,7 @@ BEGIN
 	DECLARE @PartnerTags varchar(254)
 
 	-- Retrieve the variables from the partner table
-	SET @sqlcommand = 'SELECT @O1 = SP_GEOMETRY,' +
+	SET @sqlcommand = 'SELECT @O1 = SP_GEOMETRY.Reduce(1),' +
 							 '@O2 = ' + @TagsColumn +
 					  ' FROM ' + @Schema + '.' + @PartnerTable +
 					  ' WHERE ' + @PartnerColumn + ' = ''' + @Partner + ''''
@@ -198,7 +208,7 @@ BEGIN
 	
 		CREATE TABLE #TagsTable
 		(
-			SurveyKey char(16) NOT NULL,
+			SurveyKey char(16) COLLATE database_default NOT NULL,
 			TagFound int NOT NULL
 		)
 

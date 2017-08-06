@@ -45,7 +45,8 @@ BEGIN
 		SET @RVALUE = ''
 	END
 	ELSE
-		SET @RVALUE = CAST(FLOOR(REPLACE(REPLACE(@InData, '.', ''), ',', '')) AS INT)
+		SET @RVALUE = CAST(FLOOR(REPLACE(@InData, ',', '')) AS INT)
+		--SET @RVALUE = CAST(FLOOR(REPLACE(REPLACE(@InData, '.', ''), ',', '')) AS INT)
 	END
 
 	Return @RVALUE

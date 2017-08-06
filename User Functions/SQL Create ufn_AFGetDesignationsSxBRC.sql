@@ -9,7 +9,7 @@ GO
 /*===========================================================================*\
   Description:	
 		Gets a concatenated string of the Taxon_Designation
-		Status Abbreviations used by DERC for a particular
+		Status Abbreviations used by SxBRC for a particular
 		Taxon_List_Item_Key.
 
   Parameters:	
@@ -17,7 +17,7 @@ GO
 		@Taxon_Designation_Set_Key	The primary key of the Taxon_Designation_Set
 									to look in.
 
-  Created:	Dec 2015
+  Created:	Apr 2015
 
   Last revision information:
     $Revision: 3 $
@@ -25,14 +25,7 @@ GO
     $Author: AndyFoy $
 
 \*===========================================================================*/
-
--- Drop the user function if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFGetDesignationsDERC')
-	DROP FUNCTION dbo.AFGetDesignationsDERC
-GO
-
--- Create the user function
-CREATE FUNCTION [dbo].[AFGetDesignationsDERC]
+ALTER FUNCTION [dbo].[AFGetDesignationsSxBRC]
 (
 	@Taxon_List_Item_Key		CHAR(16),
 	@Taxon_Designation_Set_Key	CHAR(16) = NULL
@@ -41,14 +34,14 @@ RETURNS	VARCHAR(1000)
 
 AS
 BEGIN
-	DECLARE @Seperator VARCHAR(100)
+	DECLARE @Seperator	VARCHAR(100)
 	
 	-- Gets the Seperator from the settings table.
-	SELECT	@Seperator = Data
-	FROM Setting
-	WHERE Name = 'DBListSep'
+	SELECT	@Seperator	=	Data
+	FROM	Setting
+	WHERE	Name		=	'DBListSep' 
 	
-	DECLARE	@ReturnValue VARCHAR(1000)
+	DECLARE	@ReturnValue	VARCHAR(1000)
 
 	DECLARE @OutputValues TABLE
 	(
@@ -58,7 +51,7 @@ BEGIN
 	
 	INSERT INTO	@OutputValues
 	SELECT 
-		CASE -- if no status abbreviation then use short name, otherwise use status abbr.
+			CASE -- if no status abbreviation then use short name, otherwise use status abbr.
 			WHEN TTDT.Status_Abbreviation IS NULL THEN TDT.Short_Name
 			ELSE TTDT.Status_Abbreviation
 		END,
@@ -66,30 +59,29 @@ BEGIN
 
 	FROM Index_Taxon_Designation ITD
 	INNER JOIN Taxon_Designation_Type TDT ON TDT.Taxon_Designation_Type_Key = ITD.Taxon_Designation_Type_Key
-	INNER JOIN Taxon_Designation_Set_Item TDSI ON TDSI.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
+	INNER JOIN Taxon_Designation_Set_Item TDSI ON	TDSI.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
 	INNER JOIN Taxon_Designation_Set TDS ON TDS.Taxon_Designation_Set_Key = TDSI.Taxon_Designation_Set_Key
-	LEFT JOIN DERC_Taxon_Designation_Types TTDT ON TTDT.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
-
-	WHERE ITD.Taxon_List_Item_Key = @Taxon_List_Item_Key
-	-- Filters by Taxon_Designation_Set if the Key is not null
-	AND (@Taxon_Designation_Set_Key IS NULL
-	OR TDS.Taxon_Designation_Set_Key = @Taxon_Designation_Set_Key)
-
-	ORDER BY TTDT.Sort_Order
+	LEFT JOIN SxBRC_Taxon_Designation_Types TTDT ON TTDT.Taxon_Designation_Type_Key = TDT.Taxon_Designation_Type_Key
+	WHERE	ITD.Taxon_List_Item_Key		=	@Taxon_List_Item_Key
+			-- Filters by Taxon_Designation_Set if the Key is not null
+		AND (@Taxon_Designation_Set_Key IS NULL
+		OR	TDS.Taxon_Designation_Set_Key	=	@Taxon_Designation_Set_Key)
 	
-	SELECT @ReturnValue =
-		-- Blank when this is the first value, otherwise
-		-- the previous string plus the seperator
-		CASE
-			WHEN @ReturnValue IS NULL THEN ''
-			ELSE @ReturnValue + @Seperator
-		END + Item
-	FROM @OutputValues
+	ORDER BY TTDT.Sort_Order
+
+	SELECT	@ReturnValue	=
+				-- Blank when this is the first value, otherwise
+				-- the previous string plus the seperator
+				CASE
+					WHEN @ReturnValue IS NULL THEN ''
+					ELSE @ReturnValue + @Seperator
+				END + Item
+	FROM		@OutputValues
 	GROUP BY Item, SortOrder
 	ORDER BY SortOrder
 	
 	-- Format the list of designations by concatenating similar types
-	RETURN dbo.AFFormatDesignationsDERC(@ReturnValue)
+	RETURN dbo.AFFormatDesignationsSxBRC(@ReturnValue)
 
 END
 

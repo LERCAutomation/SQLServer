@@ -29,6 +29,18 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
+-- Drop the procedure if it already exists
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFClearSppSubset')
+	DROP PROCEDURE dbo.AFClearSppSubset
+GO
+
+-- Create the stored procedure
+CREATE PROCEDURE [dbo].[AFClearSppSubset] @Schema varchar(50),
+	@SpeciesTable varchar(50),
+	@UserId varchar(50) = 'temp'
+AS
+BEGIN
+
 /*===========================================================================*\
   Description:		Delete any existing species subset tables.
 
@@ -49,18 +61,6 @@ GO
  A. Initial version of code.
 
 \*===========================================================================*/
-
--- Drop the procedure if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFClearSppSubset')
-	DROP PROCEDURE dbo.AFClearSppSubset
-GO
-
--- Create the stored procedure
-CREATE PROCEDURE [dbo].[AFClearSppSubset] @Schema varchar(50),
-	@SpeciesTable varchar(50),
-	@UserId varchar(50) = 'temp'
-AS
-BEGIN
 
 	SET NOCOUNT ON
 

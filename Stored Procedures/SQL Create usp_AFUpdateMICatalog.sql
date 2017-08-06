@@ -3,7 +3,7 @@
   MapInfo_MapCatalog table which is used by MapInfo when plotting spatial
   data from SQL Server.
   
-  Copyright © 2016 Andy Foy Consulting
+  Copyright © 2015 - 2016 Andy Foy Consulting
   
   This file is used by the 'DataSelector' tool, versions of which are
   available for MapInfo and ArcGIS.
@@ -30,6 +30,25 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
+-- Drop the procedure if it already exists
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFUpdateMICatalog')
+	DROP PROCEDURE dbo.AFUpdateMICatalog
+GO
+
+-- Create the stored procedure
+CREATE PROCEDURE [dbo].[AFUpdateMICatalog]
+	@Schema varchar(50),
+	@Table varchar(50),
+	@XColumn varchar(32),
+	@YColumn varchar(32),
+	@SizeColumn varchar(32),
+	@SpatialColumn varchar(32),
+	@CoordSystem varchar(254),
+	@RecCnt Int,
+	@IsSpatial bit
+AS
+BEGIN
+
 /*===========================================================================*\
   Description:		Update the MapInfo MapCatalog entry for the relevant
 					table.
@@ -53,25 +72,6 @@ GO
  A. Initial version of code taken from AFSelectSppSubset stored procedure.
 
 \*===========================================================================*/
-
--- Drop the procedure if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFUpdateMICatalog')
-	DROP PROCEDURE dbo.AFUpdateMICatalog
-GO
-
--- Create the stored procedure
-CREATE PROCEDURE [dbo].[AFUpdateMICatalog]
-	@Schema varchar(50),
-	@Table varchar(50),
-	@XColumn varchar(32),
-	@YColumn varchar(32),
-	@SizeColumn varchar(32),
-	@SpatialColumn varchar(32),
-	@CoordSystem varchar(254),
-	@RecCnt Int,
-	@IsSpatial bit
-AS
-BEGIN
 
 	SET NOCOUNT ON
 	

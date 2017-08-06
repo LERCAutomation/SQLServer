@@ -20,8 +20,8 @@ GO
   Created:	Dec 2015
 
   Last revision information:
-    $Revision: 2 $
-    $Date: 13/01/16 $
+    $Revision: 3 $
+    $Date: 12/05/17 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -52,7 +52,8 @@ BEGIN
 
 	DECLARE @OutputValues TABLE
 	(
-		Item	VARCHAR(100)
+		Item		VARCHAR(100),
+		SortOrder	INT
 	)
 	
 	INSERT INTO	@OutputValues
@@ -60,7 +61,8 @@ BEGIN
 		CASE -- if no status abbreviation then use short name, otherwise use status abbr.
 			WHEN TTDT.Status_Abbreviation IS NULL THEN TDT.Short_Name
 			ELSE TTDT.Status_Abbreviation
-		END
+		END,
+		TTDT.Sort_Order
 
 	FROM Index_Taxon_Designation ITD
 	INNER JOIN Taxon_Designation_Type TDT ON TDT.Taxon_Designation_Type_Key = ITD.Taxon_Designation_Type_Key
@@ -83,7 +85,8 @@ BEGIN
 			ELSE @ReturnValue + @Seperator
 		END + Item
 	FROM @OutputValues
-	GROUP BY Item
+	GROUP BY Item, SortOrder
+	ORDER BY SortOrder
 	
 	-- Format the list of designations by concatenating similar types
 	RETURN dbo.AFFormatDesignationsTVERC(@ReturnValue)
