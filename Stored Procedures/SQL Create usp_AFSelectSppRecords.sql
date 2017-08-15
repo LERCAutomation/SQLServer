@@ -128,13 +128,14 @@ BEGIN
 		SET @UserId = 'temp'
 
 	DECLARE @debug int
-	Set @debug = 0
+	Set @debug = 1
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Started.'
 
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
+	DECLARE @RecCnt Int
 
 	DECLARE @TempTable varchar(50)
 	SET @TempTable = @SpeciesTable + '_' + @UserId
@@ -142,14 +143,6 @@ BEGIN
 	/*---------------------------------------------------------------------------*\
 		Drop any existing temporary tables
 	\*---------------------------------------------------------------------------*/
-
-	-- Drop the index on the sequential primary key of the temporary table if it already exists
-	If EXISTS (SELECT column_name FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable AND COLUMN_NAME = 'MI_PRINX' AND CONSTRAINT_NAME = 'PK_' + @TempTable + '_MI_PRINX')
-	BEGIN
-		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @TempTable +
-			' DROP CONSTRAINT PK_' + @TempTable + '_MI_PRINX'
-		EXEC (@sqlcommand)
-	END
 	
 	-- Drop the temporary table if it already exists
 	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable)
@@ -206,6 +199,9 @@ BEGIN
 		If @PartnerTags IS NULL
 			SET @PartnerTags = ''
 	
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Partner tags = ' + @PartnerTags
+
 		CREATE TABLE #TagsTable
 		(
 			SurveyKey char(16) COLLATE database_default NOT NULL,
@@ -256,13 +252,23 @@ BEGIN
 		@O5 = @SpatialColumn OUTPUT, @O6 = @CoordSystem OUTPUT, @O7 = @SurveyKeyColumn OUTPUT
 		
 	/*---------------------------------------------------------------------------*\
-		Report if the table is spatially enabled
+		Report if the tables are spatially enabled
 	\*---------------------------------------------------------------------------*/
 
 	If @IsSpatial = 1
 	BEGIN
-		IF @debug = 1
+		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is spatial.'
+		ELSE
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is not spatial.'
+	END
+
+	If @debug = 1
+	BEGIN
+		IF @PartnerGeom IS NULL
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Partner geometry is null.'
+		ELSE
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Partner geometry is not null.'
 	END
 
 	/*---------------------------------------------------------------------------*\
@@ -273,6 +279,9 @@ BEGIN
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing selection for partner = ' + @Partner + ' ...'
 
 	-- Create a temporary index table
+	If @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating temporary table ' + @Schema + '.' + @TempTable + '_INX'
+
 	SET @sqlcommand = 'CREATE TABLE ' + @Schema + '.' + @TempTable + '_PRINX (' +
 		' MI_PRINX int NOT NULL,' +
 		' CONSTRAINT PK_' + @TempTable + '_PRINX_PRINX PRIMARY KEY (MI_PRINX)' +
@@ -287,13 +296,18 @@ BEGIN
 			'INSERT INTO ' + @Schema + '.' + @TempTable + '_PRINX' +
 			' SELECT Spp.MI_PRINX' + 
 			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-			' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1' +
-			' ORDER BY Spp.MI_PRINX'
+			' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1'
+			--' ORDER BY Spp.MI_PRINX'
 
 			SET @params = '@I1 geometry'
 
 			EXEC sp_executesql @sqlcommand, @params,
 				@I1 = @PartnerGeom
+
+		Set @RecCnt = @@ROWCOUNT
+
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' temporary records inserted ...'
 
 		SET @sqlcommand = 
 			'SELECT Spp.*' + 
@@ -340,6 +354,11 @@ BEGIN
 				EXEC sp_executesql @sqlcommand, @params,
 					@I1 = @PartnerGeom
 
+				Set @RecCnt = @@ROWCOUNT
+
+				If @debug = 1
+					PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' temporary records inserted ...'
+
 				SET @sqlcommand = 
 					'SELECT Spp.*' + 
 					' INTO ' + @Schema + '.' + @TempTable +
@@ -368,7 +387,6 @@ BEGIN
 		Report the number of records selected
 	\*---------------------------------------------------------------------------*/
 
-	DECLARE @RecCnt Int
 	Set @RecCnt = @@ROWCOUNT
 
 	If @debug = 1

@@ -243,6 +243,10 @@ BEGIN
 		@OrderByClause
 	EXEC (@sqlcommand)
 
+	/*---------------------------------------------------------------------------*\
+		Report the number of records selected
+	\*---------------------------------------------------------------------------*/
+
 	Set @RecCnt = @@ROWCOUNT
 
 	If @debug = 1
