@@ -75,6 +75,11 @@ BEGIN
 
   Created:			Apr 2016
 
+ *****************  Version 7  *****************
+ Author: Andy Foy		Date: 01/10/2017
+ A. Sum points and polygons when updating MapInfo
+	Map Catalog.
+
  *****************  Version 6  *****************
  Author: Andy Foy		Date: 27/07/2017
  A. Use view column names for temporary indexes.
@@ -127,6 +132,7 @@ BEGIN
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
 	DECLARE @RecCnt Int
+	DECLARE @RecTot Int
 
 	/*---------------------------------------------------------------------------*\
 		Lookup view column names and spatial variables from Spatial_Tables
@@ -343,6 +349,8 @@ BEGIN
 
 	END
 
+	SET @RecTot = @RecCnt
+
 	/*---------------------------------------------------------------------------*\
 		Report the number of point records spatialised
 	\*---------------------------------------------------------------------------*/
@@ -381,6 +389,8 @@ BEGIN
 	EXEC sp_executesql @sqlcommand
 
 	Set @RecCnt = @@ROWCOUNT
+
+	SET @RecTot = @RecTot + @RecCnt
 
 	/*---------------------------------------------------------------------------*\
 		Report the number of polygon records spatialised
@@ -490,7 +500,7 @@ BEGIN
 	\*---------------------------------------------------------------------------*/
 
 	SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @View + ''', ''' + @XColumn + ''', ''' + @YColumn +
-		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecTot As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 	EXEC (@sqlcommand)
 
 	If @debug = 1
