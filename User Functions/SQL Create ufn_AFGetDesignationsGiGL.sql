@@ -20,8 +20,8 @@ GO
   Created:	Dec 2015
 
   Last revision information:
-    $Revision: 3 $
-    $Date: 12/05/17 $
+    $Revision: 4 $
+    $Date: 11/10/17 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -57,7 +57,7 @@ BEGIN
 	)
 	
 	INSERT INTO	@OutputValues
-	SELECT 
+	SELECT DISTINCT
 		CASE -- if no status abbreviation then use short name, otherwise use status abbr.
 			WHEN TTDT.Status_Abbreviation IS NULL THEN TDT.Short_Name
 			ELSE TTDT.Status_Abbreviation

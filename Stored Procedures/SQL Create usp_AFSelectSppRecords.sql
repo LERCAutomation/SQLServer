@@ -64,7 +64,11 @@ BEGIN
 	@UserId			The userid of the user executing the selection.
 
   Created:			Nov 2012
-  Last revised: 	Jul 2017
+  Last revised: 	Nov 2017
+
+ *****************  Version 10  ****************
+ Author: Andy Foy		Date: 16/11/2017
+ A. Suppress print statements unless in debug mode.
 
  *****************  Version 9  *****************
  Author: Andy Foy		Date: 28/07/2017
@@ -128,7 +132,7 @@ BEGIN
 		SET @UserId = 'temp'
 
 	DECLARE @debug int
-	Set @debug = 1
+	Set @debug = 0
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Started.'
@@ -255,9 +259,9 @@ BEGIN
 		Report if the tables are spatially enabled
 	\*---------------------------------------------------------------------------*/
 
-	If @IsSpatial = 1
+	If @debug = 1
 	BEGIN
-		If @debug = 1
+		If @IsSpatial = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is spatial.'
 		ELSE
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Table is not spatial.'
@@ -290,7 +294,8 @@ BEGIN
 
 	If @SelectType = 1 AND @IsSpatial = 1 AND @PartnerGeom IS NOT NULL
 	BEGIN
-		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing spatial selection only ...'
+		If @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing spatial selection only ...'
 
 		SET @sqlcommand = 
 			'INSERT INTO ' + @Schema + '.' + @TempTable + '_PRINX' +
@@ -321,7 +326,8 @@ BEGIN
 	BEGIN
 		If (@SelectType = 2 AND @PartnerTags <> '') Or (@SelectType = 3 AND @PartnerGeom IS NULL)
 		BEGIN
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing tags selection only ...'
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing tags selection only ...'
 
 			SET @sqlcommand = 
 				'SELECT Spp.*' + 
@@ -336,7 +342,8 @@ BEGIN
 		BEGIN
 			If @SelectType = 3 AND (@PartnerTags <> '' Or (@IsSpatial = 1 AND @PartnerGeom IS NOT NULL))
 			BEGIN
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing spatial and tags selection ...'
+				If @debug = 1
+					PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing spatial and tags selection ...'
 
 				SET @sqlcommand = 
 					'INSERT INTO ' + @Schema + '.' + @TempTable + '_PRINX' +
@@ -369,7 +376,8 @@ BEGIN
 			END
 			ELSE
 			BEGIN
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'No selection performed.'
+				If @debug = 1
+					PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'No selection performed.'
 
 				SET @sqlcommand = 
 					'SELECT Spp.*' +
@@ -401,7 +409,7 @@ BEGIN
 	EXEC (@sqlcommand)
 
 	-- Drop the temporary survey tags table (if it exists)
-	IF OBJECT_ID('tempdb..#TagsTable') IS NOT NULL
+	If OBJECT_ID('tempdb..#TagsTable') IS NOT NULL
 		DROP TABLE #TagsTable
 
 	/*---------------------------------------------------------------------------*\
