@@ -18,8 +18,8 @@ GO
   Created:	Dec 2015
 
   Last revision information:
-    $Revision: 2 $
-    $Date: 13/01/16 $
+    $Revision: 3 $
+    $Date: 15/03/16 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -46,7 +46,7 @@ DECLARE @SecondPart varchar(200)
 DECLARE @WholePart varchar(200)
 
 SET @WholePart = @TextIn
-SET @FirstDesig = CHARINDEX('WACA-Sch5-', @WholePart)
+SET @FirstDesig = CHARINDEX('WACA Sch5 ', @WholePart)
 
 IF @FirstDesig > 0
 BEGIN
@@ -54,7 +54,7 @@ BEGIN
 	SET @FirstPart = LEFT(@WholePart, @FirstDesig + 10 ) 
 	SET @SecondPart = RIGHT(@WholePart, LEN(@WholePart) - (@FirstDesig + 10))
 	     
-	SET @SecondPart = REPLACE(@SecondPart,'WACA-Sch5-','/')
+	SET @SecondPart = REPLACE(@SecondPart,'WCA Sch5 ','/')
 	SET @SecondPart = REPLACE(@SecondPart,', /','/')
 	SET @TextOut = @FirstPart + @SecondPart
          
