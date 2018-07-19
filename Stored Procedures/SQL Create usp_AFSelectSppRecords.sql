@@ -1,9 +1,9 @@
-/*===========================================================================*\
+﻿/*===========================================================================*\
   AFSelectSppRecords is a SQL stored procedure to create an intermediate
   SQL Server table containing a subset of records based on their spatial
   intersection with a given record in another table.
   
-  Copyright � 2012-2013, 2015-2017 Andy Foy Consulting
+  Copyright © 2012-2013, 2015-2018 Andy Foy Consulting
   
   This file is used by the 'DataExtractor' tool, versions of which are
   available for MapInfo and ArcGIS.
@@ -42,6 +42,7 @@ CREATE PROCEDURE dbo.AFSelectSppRecords
 	@PartnerColumn varchar(50),
 	@Partner varchar(50),
 	@TagsColumn varchar(50),
+	@PartnerSpatialColumn varchar(50),
 	@SelectType int,
 	@SpeciesTable varchar(50),
 	@UserId varchar(50)
@@ -53,18 +54,28 @@ BEGIN
 					polygon(s) passed by the calling routine.
 
   Parameters:
-	@Schema			The schema for the partner and species table.
-	@PartnerTable	The name of the partner table used for selecting.
-	@PartnerColumn	The name of the column containing the partner to be used.
-	@Partner		The partner to be used for selecting.
-	@TagsColumn		The name of the column containing the survey tags to check.
-	@SelectType		Whether the selection is based on the partner's spatial
-					boundary, survey tags or both.
-	@SpeciesTable	The name of the table containing the species records.
-	@UserId			The userid of the user executing the selection.
+	@Schema					The schema for the partner and species table.
+	@PartnerTable			The name of the partner table used for selecting.
+	@PartnerColumn			The name of the column containing the partner to be used.
+	@Partner				The partner to be used for selecting.
+	@TagsColumn				The name of the column containing the survey tags to check.
+	@PartnerSpatialColumn	The name of the column containing the spatial geometry.
+	@SelectType				Whether the selection is based on the partner's spatial
+							boundary, survey tags or both.
+	@SpeciesTable			The name of the table containing the species records.
+	@UserId					The userid of the user executing the selection.
+	@UseCentroids			Whether the selection is based on polygon centroids or the
+							whole polygon. 0 = polygon, 1 = centroid
 
   Created:			Nov 2012
-  Last revised: 	Nov 2017
+  Last revised: 	Jul 2018
+
+ *****************  Version 11  ****************
+ Author: Andy Foy		Date: 13/07/2018
+ A. Add parameter for name of the spatial column in the
+ 	partner table.
+ B. Add option to perform polygon selection using centroids.
+ C. Remove hard-coding and get the primary key column name.
 
  *****************  Version 10  ****************
  Author: Andy Foy		Date: 16/11/2017
@@ -140,9 +151,39 @@ BEGIN
 	DECLARE @sqlCommand nvarchar(2000)
 	DECLARE @params nvarchar(2000)
 	DECLARE @RecCnt Int
+	DECLARE @PrimaryKey nvarchar(128)
+	DECLARE @DataType nvarchar(128)
+	DECLARE @DataLength int
 
 	DECLARE @TempTable varchar(50)
 	SET @TempTable = @SpeciesTable + '_' + @UserId
+
+	/*---------------------------------------------------------------------------*\
+		Get the name of the primary key column for the species table
+	\*---------------------------------------------------------------------------*/
+
+	SET @sqlcommand = 'SELECT @O1 = CO.COLUMN_NAME,' +
+					  ' @O2 = CO.DATA_TYPE,' +
+					  ' @O3 = CO.CHARACTER_MAXIMUM_LENGTH' +
+					  ' FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS TC' +
+					  ' INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS KU' +
+			          ' ON TC.CONSTRAINT_NAME = KU.CONSTRAINT_NAME' +
+			          ' AND TC.CONSTRAINT_TYPE = 'PRIMARY KEY''' +
+					  ' INNER JOIN INFORMATION_SCHEMA.COLUMNS CO' +
+					  ' ON CO.TABLE_NAME = KU.TABLE_NAME
+					  ' AND CO.COLUMN_NAME = KU.COLUMN_NAME
+					  ' WHERE KU.TABLE_SCHEMA = ''' + @Schema + '''' +
+			          ' AND KU.TABLE_NAME = ''' + @SpeciesTable + ''''
+
+	SET @params =	'@O1 nvarchar(128) OUTPUT,'
+					'@O2 nvarchar(128) OUTPUT,' +
+					'@O3 int OUTPUT' +
+		
+	EXEC sp_executesql @sqlcommand, @params,
+		@O1 = @PrimaryKey OUTPUT, @O2 = @DataType OUTPUT, @O3 = @DataLength OUTPUT
+
+	If @DataLength IS NOT NULL
+		SET @DataType = @DataType + '(' + CAST(@DataLength As varchar) + ')'
 
 	/*---------------------------------------------------------------------------*\
 		Drop any existing temporary tables
@@ -158,19 +199,19 @@ BEGIN
 	END
 
 	-- Drop the index on the sequential primary key of the temporary index table if it already exists
-	If EXISTS (SELECT column_name FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable AND COLUMN_NAME = 'MI_PRINX' AND CONSTRAINT_NAME = 'PK_' + @TempTable + '_MI_PRINX')
+	If EXISTS (SELECT column_name FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable AND COLUMN_NAME = ' + @PrimaryKey + ' AND CONSTRAINT_NAME = 'PK_' + @TempTable + '_INX')
 	BEGIN
-		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @TempTable + '_PRINX' +
-			' DROP CONSTRAINT PK_' + @TempTable + '_PRINX_PRINX'
+		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @TempTable + '_INX' +
+			' DROP CONSTRAINT PK_' + @TempTable + '_INX_IX'
 		EXEC (@sqlcommand)
 	END
 	
 	-- Drop the temporary index table if it already exists
-	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable + '_PRINX')
+	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable + '_INX')
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary index table ...'
-		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable + '_PRINX'
+		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable + '_INX'
 		EXEC (@sqlcommand)
 	END
 
@@ -182,7 +223,7 @@ BEGIN
 	DECLARE @PartnerTags varchar(254)
 
 	-- Retrieve the variables from the partner table
-	SET @sqlcommand = 'SELECT @O1 = SP_GEOMETRY.Reduce(1),' +
+	SET @sqlcommand = 'SELECT @O1 = ' + @PartnerSpatialColumn + '.Reduce(1),' +
 							 '@O2 = ' + @TagsColumn +
 					  ' FROM ' + @Schema + '.' + @PartnerTable +
 					  ' WHERE ' + @PartnerColumn + ' = ''' + @Partner + ''''
@@ -286,9 +327,9 @@ BEGIN
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating temporary table ' + @Schema + '.' + @TempTable + '_INX'
 
-	SET @sqlcommand = 'CREATE TABLE ' + @Schema + '.' + @TempTable + '_PRINX (' +
-		' MI_PRINX int NOT NULL,' +
-		' CONSTRAINT PK_' + @TempTable + '_PRINX_PRINX PRIMARY KEY (MI_PRINX)' +
+	SET @sqlcommand = 'CREATE TABLE ' + @Schema + '.' + @TempTable + '_INX (' +
+		' INX ' + @DataType + ' NOT NULL,' +
+		' CONSTRAINT PK_' + @TempTable + '_INX_IX PRIMARY KEY (INX)' +
 		' )'
 	EXEC (@sqlcommand)
 
@@ -297,19 +338,59 @@ BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing spatial selection only ...'
 
-		SET @sqlcommand = 
-			'INSERT INTO ' + @Schema + '.' + @TempTable + '_PRINX' +
-			' SELECT Spp.MI_PRINX' + 
-			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-			' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1'
-			--' ORDER BY Spp.MI_PRINX'
+		If @UseCentroids = 0
+		BEGIN
+
+			SET @sqlcommand = 
+				'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
+				' SELECT Spp.' + @PrimaryKey
+				' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+				' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1'
 
 			SET @params = '@I1 geometry'
-
+	
 			EXEC sp_executesql @sqlcommand, @params,
 				@I1 = @PartnerGeom
+	
+			Set @RecCnt = @@ROWCOUNT
 
-		Set @RecCnt = @@ROWCOUNT
+		END
+		ELSE
+		BEGIN
+
+			-- Select points
+
+			SET @sqlcommand = 
+				'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
+				' SELECT Spp.' + @PrimaryKey
+				' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+				' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1' +
+				' AND ' + @SpatialColumn + '.STGeometryType() LIKE ''%Point'''
+
+			SET @params = '@I1 geometry'
+	
+			EXEC sp_executesql @sqlcommand, @params,
+				@I1 = @PartnerGeom
+	
+			Set @RecCnt = @@ROWCOUNT
+
+			-- Select polygons (using their centroids)
+
+			SET @sqlcommand = 
+				'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
+				' SELECT Spp.' + @PrimaryKey
+				' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
+				' WHERE Spp.' + @SpatialColumn + '.STCentroid().STIntersects(@I1) = 1' +
+				' AND ' + @SpatialColumn + '.STGeometryType() LIKE ''%Polygon'''
+
+			SET @params = '@I1 geometry'
+	
+			EXEC sp_executesql @sqlcommand, @params,
+				@I1 = @PartnerGeom
+	
+			Set @RecCnt = @RecCnt + @@ROWCOUNT
+
+		END
 
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' temporary records inserted ...'
@@ -318,7 +399,7 @@ BEGIN
 			'SELECT Spp.*' + 
 			' INTO ' + @Schema + '.' + @TempTable +
 			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-			' INNER JOIN ' + @Schema + '.' + @TempTable + '_PRINX As Keys ON Keys.MI_PRINX = Spp.MI_PRINX'
+			' INNER JOIN ' + @Schema + '.' + @TempTable + '_INX As Keys ON Keys.INX = Spp.' + @PrimaryKey
 
 		EXEC (@sqlcommand)
 	END
@@ -346,13 +427,13 @@ BEGIN
 					PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Performing spatial and tags selection ...'
 
 				SET @sqlcommand = 
-					'INSERT INTO ' + @Schema + '.' + @TempTable + '_PRINX' +
-					' SELECT Spp.MI_PRINX' + 
+					'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
+					' SELECT Spp.' + @PrimaryKey
 					' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 					' INNER JOIN #TagsTable As Tags ON Tags.SurveyKey = Spp.' + @SurveyKeyColumn +
 					' WHERE Tags.TagFound = 1' +
 					' UNION' +
-					' SELECT Spp.MI_PRINX' + 
+					' SELECT Spp.' + @PrimaryKey
 					' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 					' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1'
 
@@ -370,7 +451,7 @@ BEGIN
 					'SELECT Spp.*' + 
 					' INTO ' + @Schema + '.' + @TempTable +
 					' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
-					' INNER JOIN ' + @Schema + '.' + @TempTable + '_PRINX As Keys ON Keys.MI_PRINX = Spp.MI_PRINX'
+					' INNER JOIN ' + @Schema + '.' + @TempTable + '_INX As Keys ON Keys.INX = Spp.' + @PrimaryKey
 
 				EXEC (@sqlcommand)
 			END
@@ -405,7 +486,7 @@ BEGIN
 	\*---------------------------------------------------------------------------*/
 
 	-- Drop the temporary index table
-	SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable + '_PRINX'
+	SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable + '_INX'
 	EXEC (@sqlcommand)
 
 	-- Drop the temporary survey tags table (if it exists)
@@ -416,11 +497,14 @@ BEGIN
 		Update the MapInfo MapCatalog if it exists
 	\*---------------------------------------------------------------------------*/
 
-	-- Update the MapInfo MapCatalog entry
-	SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
-		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
-	EXEC (@sqlcommand)
-
+	-- If the MapInfo MapCatalog exists then update it
+	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
+	BEGIN
+		-- Update the MapInfo MapCatalog entry
+		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+		EXEC (@sqlcommand)
+	END
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'
