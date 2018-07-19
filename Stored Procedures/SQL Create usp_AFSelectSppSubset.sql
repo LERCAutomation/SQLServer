@@ -1,4 +1,4 @@
-﻿/*===========================================================================*\
+/*===========================================================================*\
   AFSelectSppSubset is a SQL stored procedure to create an intermediate
   SQL Server table containing a subset of records based on a given set
   of SQL criteria.
@@ -50,7 +50,7 @@ BEGIN
 
 /*===========================================================================*\
   Description:		Select species records based on the SQL clauses
-					passed by the calling routine ready for use by ArcGIS
+					passed by the calling routine from GIS
 
   Parameters:
 	@Schema			The schema for the partner and species table.
@@ -64,7 +64,12 @@ BEGIN
 					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Aug 2016
+  Last revised:		Jul 2018
+
+ *****************  Version 11  ****************
+ Author: Andy Foy		Date: 13/07/2018
+ A. Check the MapInfo MapCatalog exists before
+ 	updating it.
 
  *****************  Version 10  ****************
  Author: Andy Foy		Date: 19/08/2016
@@ -255,9 +260,14 @@ BEGIN
 		/*---------------------------------------------------------------------------*\
 			Update the MapInfo MapCatalog entry
 		\*---------------------------------------------------------------------------*/
-		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
-			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
-		EXEC (@sqlcommand)
+
+		-- If the MapInfo MapCatalog exists then update it
+		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
+		BEGIN
+			SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+			EXEC (@sqlcommand)
+		END
 
 	/*---------------------------------------------------------------------------*\
 		Report if the table is spatially enabled
@@ -280,6 +290,10 @@ BEGIN
 
 	If @Split = 1 AND @IsSpatial = 1
 	BEGIN
+
+		/*---------------------------------------------------------------------------*\
+			Clear any existing temporary table
+		\*---------------------------------------------------------------------------*/
 
 		SET @SplitTable = @SpeciesTable + '_point_' + @UserId
 
@@ -319,9 +333,18 @@ BEGIN
 		/*---------------------------------------------------------------------------*\
 			Update the MapInfo MapCatalog entry
 		\*---------------------------------------------------------------------------*/
-		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
-			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
-		EXEC (@sqlcommand)
+
+		-- If the MapInfo MapCatalog exists then update it
+		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
+		BEGIN
+			SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+			EXEC (@sqlcommand)
+		END
+
+		/*---------------------------------------------------------------------------*\
+			Clear any existing temporary table
+		\*---------------------------------------------------------------------------*/
 
 		SET @SplitTable = @SpeciesTable + '_poly_' + @UserId
 
@@ -361,9 +384,14 @@ BEGIN
 		/*---------------------------------------------------------------------------*\
 			Update the MapInfo MapCatalog entry
 		\*---------------------------------------------------------------------------*/
-		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
-			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
-		EXEC (@sqlcommand)
+
+		-- If the MapInfo MapCatalog exists then update it
+		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
+		BEGIN
+			SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+			EXEC (@sqlcommand)
+		END
 
 	END
 
