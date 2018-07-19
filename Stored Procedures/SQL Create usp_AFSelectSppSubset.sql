@@ -257,17 +257,17 @@ BEGIN
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' records selected ...'
 
-		/*---------------------------------------------------------------------------*\
-			Update the MapInfo MapCatalog entry
-		\*---------------------------------------------------------------------------*/
+	/*---------------------------------------------------------------------------*\
+		Update the MapInfo MapCatalog entry
+	\*---------------------------------------------------------------------------*/
 
-		-- If the MapInfo MapCatalog exists then update it
-		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
-		BEGIN
-			SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
-				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
-			EXEC (@sqlcommand)
-		END
+	-- If the MapInfo MapCatalog exists then update it
+	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
+	BEGIN
+		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+		EXEC (@sqlcommand)
+	END
 
 	/*---------------------------------------------------------------------------*\
 		Report if the table is spatially enabled
