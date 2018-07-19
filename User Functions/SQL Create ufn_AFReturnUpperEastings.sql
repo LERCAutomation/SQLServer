@@ -13,12 +13,13 @@ GO
   Parameters:
 	@Eastings		The current eastings value.
 	@Precision		The precision of the bounding box required.
+	@PolyMin		The minimum polygon size.
 
   Created:	Nov 2012
 
   Last revision information:
-    $Revision: 1 $
-    $Date: 10/12/12 12:19 $
+    $Revision: 2 $
+    $Date: 12/07/18 12:35 $
     $Author: Andyfoy $
 
 \*===========================================================================*/
@@ -29,12 +30,15 @@ if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SC
 GO
 
 -- Create the user function
-CREATE FUNCTION dbo.AFReturnUpperEastings(@Eastings Int, @Precision Int)
+CREATE FUNCTION dbo.AFReturnUpperEastings(@Eastings Int, @Precision Int, @PolyMin Int)
 RETURNS VarChar(6)
 
 AS
 BEGIN
 	
+	IF @Precision < @PolyMin
+		@Precision = @PolyMin
+
 	Declare @ReturnValue Int
 	SET @ReturnValue = 
 	CASE
