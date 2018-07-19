@@ -3,7 +3,7 @@
   Server table by creating Geometry from X & Y grid reference values and
   a grid reference precision based on a view's spatial deinfition of the table.
   
-  Copyright © 2016 - 2017 Andy Foy Consulting
+  Copyright © 2016 - 2018 Andy Foy Consulting
   
   This file is used by the 'DataSelector' and 'DataExtractor' tools, versions
   of which are available for MapInfo and ArcGIS.
@@ -48,6 +48,7 @@ CREATE PROCEDURE dbo.AFSpatialiseSppView
 	@SizeMax Int,
 	@PointMax Int,
 	@PointPos Int,
+	@PolyMin Int,
 	@BuildIndex Int
 
 AS
@@ -55,7 +56,7 @@ BEGIN
 
 /*===========================================================================*\
   Description:		Prepares an existing SQL table that contains spatial data
-					so that it can be used 'spatially' by SQL Server and MapInfo
+					so that it can be used 'spatially' by SQL Server
 
   Parameters:
 	@Schema			The schema for the table to be spatialised.
@@ -70,10 +71,18 @@ BEGIN
 	@PointMax		The maximum value for the precision when points will be
 					created instead of polygons.
 	@PointPos		The position for plotting points (1 = Lower Left,
-					2 = Mid, 3 = Upper Right)
-	@BuildIndex		If a spatial index should be built (0 = No, 1 = Yes)
+					2 = Mid, 3 = Upper Right).
+	@PolyMin		The minimum size for polygons.
+	@BuildIndex		If a spatial index should be built (0 = No, 1 = Yes).
 
   Created:			Apr 2016
+  Last revised:		Jul 2018
+
+ *****************  Version 8  *****************
+ Author: Andy Foy		Date: 12/07/2018
+ A. Add option to set minimum size for polygons.
+ B. Check the MapInfo MapCatalog exists before
+ 	updating it.
 
  *****************  Version 7  *****************
  Author: Andy Foy		Date: 01/10/2017
@@ -225,38 +234,42 @@ BEGIN
 		Add new MapInfo mandatory fields (if they don't already exist)
 	\*---------------------------------------------------------------------------*/
 
-	-- Add a new MapInfo style field if it doesn't already exists
-	if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_STYLE')
+	-- If the MapInfo MapCatalog exists
+	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
 	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new MI_STYLE field ...'
-
-		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
-			' ADD MI_STYLE VarChar(254)'
-		EXEC (@sqlcommand)
-	END
-
-	-- Add a new primary key if it doesn't already exists
-	if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX')
-	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new MI_PRINX field ...'
-
-		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
-			' ADD MI_PRINX Int IDENTITY'
-		EXEC (@sqlcommand)
-	END
-
-	-- Add a new sequential index on the primary key if it doesn't already exists
-	if not exists (select column_name from INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX' and CONSTRAINT_NAME = 'PK_' + @Table + '_MI_PRINX')
-	BEGIN
-		If @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new primary index ...'
-
-		SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
-			' ADD CONSTRAINT PK_' + @Table + '_MI_PRINX' +
-			' PRIMARY KEY(MI_PRINX)'
-		EXEC (@sqlcommand)
+		-- Add a new MapInfo style field if it doesn't already exists
+		if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_STYLE')
+		BEGIN
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new MI_STYLE field ...'
+	
+			SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
+				' ADD MI_STYLE VarChar(254)'
+			EXEC (@sqlcommand)
+		END
+	
+		-- Add a new primary key if it doesn't already exists
+		if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX')
+		BEGIN
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new MI_PRINX field ...'
+	
+			SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
+				' ADD MI_PRINX Int IDENTITY'
+			EXEC (@sqlcommand)
+		END
+	
+		-- Add a new sequential index on the primary key if it doesn't already exists
+		if not exists (select column_name from INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX' and CONSTRAINT_NAME = 'PK_' + @Table + '_MI_PRINX')
+		BEGIN
+			If @debug = 1
+				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new primary index ...'
+	
+			SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
+				' ADD CONSTRAINT PK_' + @Table + '_MI_PRINX' +
+				' PRIMARY KEY(MI_PRINX)'
+			EXEC (@sqlcommand)
+		END
 	END
 	
 	/*---------------------------------------------------------------------------*\
@@ -367,16 +380,16 @@ BEGIN
 
 	SET @sqlCommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
 						'SET ' + @SpatialColumn + ' = geometry::STPolyFromText(''POLYGON (('' + ' +
-						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
+						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
+						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
 						'''))'', ' + CAST(@SRID As varchar) + ') ' +
 						'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
 						' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
@@ -499,9 +512,13 @@ BEGIN
 		Update the MapInfo MapCatalog if it exists
 	\*---------------------------------------------------------------------------*/
 
-	SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @View + ''', ''' + @XColumn + ''', ''' + @YColumn +
-		''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecTot As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
-	EXEC (@sqlcommand)
+	-- If the MapInfo MapCatalog exists then update it
+	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
+	BEGIN
+		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @View + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecTot As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
+		EXEC (@sqlcommand)
+	END
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Ended.'
