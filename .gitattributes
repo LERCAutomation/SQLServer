@@ -2,5 +2,5 @@
 * text=auto
 
 # Standard to msysgit
-*.sql	 diff=astextplain
-*.SQL	 diff=astextplain
+#*.sql	 diff=astextplain
+#*.SQL	 diff=astextplain
