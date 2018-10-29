@@ -50,6 +50,7 @@ BEGIN
 
 	-- Reformat or remove some data components
 	SELECT @Data = CASE @MData
+		WHEN 'Taxon' THEN ''
 		WHEN NULL THEN ''
 		ELSE @MData
 	END
@@ -68,6 +69,11 @@ BEGIN
 
 	-- Reformat or remove some qualifier components
 	SELECT @Qual = CASE @MQual
+		WHEN 'Not specified' THEN ''
+		WHEN 'Taxon' THEN ''
+		WHEN 'None' THEN ''
+		WHEN 'Default' THEN ''
+		WHEN 'Occurrence' THEN ''
 		WHEN NULL THEN ''
 		ELSE @MQual
 	END
@@ -93,14 +99,14 @@ BEGIN
 	BEGIN
 		
 		IF @Unit <> ''
-			SET @RETURNDATA = @Data + ' ' + @Unit + @Qual + '; '
+			SET @RETURNDATA = @Data + ' ' + @Unit + @Qual
 		ELSE
-			SET @RETURNDATA = @Data + @Qual + '; '
+			SET @RETURNDATA = @Data + @Qual
 	END
 	ELSE
 	BEGIN
 		IF @Qual <> ''
-			SET @RETURNDATA = RIGHT(@Qual, LEN(@Qual) - 1) + '; '
+			SET @RETURNDATA = RIGHT(@Qual, LEN(@Qual) - 1)
 	END
 
 	-- Clear the return value if it doesn't

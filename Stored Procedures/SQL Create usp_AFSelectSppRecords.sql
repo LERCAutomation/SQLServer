@@ -45,7 +45,8 @@ CREATE PROCEDURE dbo.AFSelectSppRecords
 	@PartnerSpatialColumn varchar(50),
 	@SelectType int,
 	@SpeciesTable varchar(50),
-	@UserId varchar(50)
+	@UserId varchar(50),
+	@UseCentroids int
 AS
 BEGIN
 
@@ -75,7 +76,6 @@ BEGIN
  A. Add parameter for name of the spatial column in the
  	partner table.
  B. Add option to perform polygon selection using centroids.
- C. Remove hard-coding and get the primary key column name.
 
  *****************  Version 10  ****************
  Author: Andy Foy		Date: 16/11/2017
@@ -155,35 +155,12 @@ BEGIN
 	DECLARE @DataType nvarchar(128)
 	DECLARE @DataLength int
 
+	SET @PrimaryKey = 'MI_PRINX'
+	SET @DataType = 'int'
+	SET @DataLength = NULL
+
 	DECLARE @TempTable varchar(50)
 	SET @TempTable = @SpeciesTable + '_' + @UserId
-
-	/*---------------------------------------------------------------------------*\
-		Get the name of the primary key column for the species table
-	\*---------------------------------------------------------------------------*/
-
-	SET @sqlcommand = 'SELECT @O1 = CO.COLUMN_NAME,' +
-					  ' @O2 = CO.DATA_TYPE,' +
-					  ' @O3 = CO.CHARACTER_MAXIMUM_LENGTH' +
-					  ' FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS TC' +
-					  ' INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS KU' +
-			          ' ON TC.CONSTRAINT_NAME = KU.CONSTRAINT_NAME' +
-			          ' AND TC.CONSTRAINT_TYPE = 'PRIMARY KEY''' +
-					  ' INNER JOIN INFORMATION_SCHEMA.COLUMNS CO' +
-					  ' ON CO.TABLE_NAME = KU.TABLE_NAME
-					  ' AND CO.COLUMN_NAME = KU.COLUMN_NAME
-					  ' WHERE KU.TABLE_SCHEMA = ''' + @Schema + '''' +
-			          ' AND KU.TABLE_NAME = ''' + @SpeciesTable + ''''
-
-	SET @params =	'@O1 nvarchar(128) OUTPUT,'
-					'@O2 nvarchar(128) OUTPUT,' +
-					'@O3 int OUTPUT' +
-		
-	EXEC sp_executesql @sqlcommand, @params,
-		@O1 = @PrimaryKey OUTPUT, @O2 = @DataType OUTPUT, @O3 = @DataLength OUTPUT
-
-	If @DataLength IS NOT NULL
-		SET @DataType = @DataType + '(' + CAST(@DataLength As varchar) + ')'
 
 	/*---------------------------------------------------------------------------*\
 		Drop any existing temporary tables
@@ -327,6 +304,9 @@ BEGIN
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Creating temporary table ' + @Schema + '.' + @TempTable + '_INX'
 
+	If @DataLength IS NOT NULL
+		SET @DataType = @DataType + '(' + CAST(@DataLength As varchar) + ')'
+
 	SET @sqlcommand = 'CREATE TABLE ' + @Schema + '.' + @TempTable + '_INX (' +
 		' INX ' + @DataType + ' NOT NULL,' +
 		' CONSTRAINT PK_' + @TempTable + '_INX_IX PRIMARY KEY (INX)' +
@@ -343,7 +323,7 @@ BEGIN
 
 			SET @sqlcommand = 
 				'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
-				' SELECT Spp.' + @PrimaryKey
+				' SELECT Spp.' + @PrimaryKey +
 				' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 				' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1'
 
@@ -362,7 +342,7 @@ BEGIN
 
 			SET @sqlcommand = 
 				'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
-				' SELECT Spp.' + @PrimaryKey
+				' SELECT Spp.' + @PrimaryKey +
 				' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 				' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1' +
 				' AND ' + @SpatialColumn + '.STGeometryType() LIKE ''%Point'''
@@ -378,7 +358,7 @@ BEGIN
 
 			SET @sqlcommand = 
 				'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
-				' SELECT Spp.' + @PrimaryKey
+				' SELECT Spp.' + @PrimaryKey +
 				' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 				' WHERE Spp.' + @SpatialColumn + '.STCentroid().STIntersects(@I1) = 1' +
 				' AND ' + @SpatialColumn + '.STGeometryType() LIKE ''%Polygon'''
@@ -428,12 +408,12 @@ BEGIN
 
 				SET @sqlcommand = 
 					'INSERT INTO ' + @Schema + '.' + @TempTable + '_INX' +
-					' SELECT Spp.' + @PrimaryKey
+					' SELECT Spp.' + @PrimaryKey +
 					' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 					' INNER JOIN #TagsTable As Tags ON Tags.SurveyKey = Spp.' + @SurveyKeyColumn +
 					' WHERE Tags.TagFound = 1' +
 					' UNION' +
-					' SELECT Spp.' + @PrimaryKey
+					' SELECT Spp.' + @PrimaryKey +
 					' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 					' WHERE Spp.' + @SpatialColumn + '.STIntersects(@I1) = 1'
 
