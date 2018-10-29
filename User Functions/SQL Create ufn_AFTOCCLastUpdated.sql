@@ -18,8 +18,8 @@ GO
   Created:	Apr 2016
 
   Last revision information:
-    $Revision: 1 $
-    $Date: 19/04/16 $
+    $Revision: 2 $
+    $Date: 29/10/18 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -35,7 +35,7 @@ CREATE FUNCTION [dbo].[AFTOCCLastUpdated]
 	@Taxon_Occurrence_Key		CHAR(16),
 	@DateType					INT
 )
-RETURNS	smalldatetime
+RETURNS	date
 
 AS
 BEGIN
@@ -67,7 +67,7 @@ BEGIN
 		IF @TDET_Change	> @LastDate SET @LastDate = @TDET_Change
 	END
 
-	RETURN @LastDate
+	RETURN CONVERT(date, @LastDate)
 
 END
 
