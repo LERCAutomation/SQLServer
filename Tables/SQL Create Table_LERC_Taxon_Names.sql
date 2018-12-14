@@ -10,8 +10,8 @@ GO
 
 CREATE TABLE [dbo].[LERC_Taxon_Names](
 	[TaxonGroup] [varchar](50) NOT NULL,
-	[TaxonName] [varchar](100) NOT NULL,
-	[DefaultCommonName] [varchar](100) NULL,
+	[TaxonName] [varchar](75) NOT NULL,
+	[DefaultCommonName] [varchar](75) NULL,
 	[DefaultLocation] [varchar](100) NULL,
 	[DefaultGR] [varchar](6) NULL,
 	[Confidential] [char](1) NULL,
@@ -20,7 +20,7 @@ CREATE TABLE [dbo].[LERC_Taxon_Names](
 	[InvalidSpp] [char](1) NULL,
 	[OverrideStatus] [char](1) NULL,
 	[DefaultStatusEuro] [varchar](50) NULL,
-	[DefaultStatusUK] [varchar](100) NULL,
+	[DefaultStatusUK] [varchar](150) NULL,
 	[DefaultStatusOther] [varchar](150) NULL,
 	[DefaultStatusINNS] [varchar](50) NULL,
  CONSTRAINT [PK_LERC_Taxon_Names] PRIMARY KEY CLUSTERED 

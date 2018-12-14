@@ -11,7 +11,7 @@ GO
 CREATE TABLE [dbo].[LERC_Taxon_Groups](
 	[Taxon_Group_Name] [varchar](50) NOT NULL,
 	[TaxonGroup] [varchar](60) NOT NULL,
-	[DefaultCommonName] [varchar](100) NULL,
+	[DefaultCommonName] [varchar](75) NULL,
 	[ReportGroupName] [varchar](100) NULL,
 	[EarliestYear] [int] NULL,
 	[DefaultLocation] [varchar](100) NULL,

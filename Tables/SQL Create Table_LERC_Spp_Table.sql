@@ -20,7 +20,7 @@ CREATE TABLE [dbo].[LERC_Spp_Table](
 	[SortOrder] [varchar](36) NULL,
 	[GroupOrder] [int] NULL,
 
-	[Abundance] [varchar](150) NULL,
+	[Abundance] [varchar](200) NULL,
 	[AbundanceCount] [int] NULL,
 
 	[RecDate] [varchar](40) NULL,
@@ -50,7 +50,7 @@ CREATE TABLE [dbo].[LERC_Spp_Table](
 	[Provenance] [varchar](16) NULL,
 
 	[StatusEuro] [varchar](50) NULL,
-	[StatusUK] [varchar](100) NULL,
+	[StatusUK] [varchar](150) NULL,
 	[StatusOther] [varchar](150) NULL,
 	[StatusINNS] [varchar](50) NULL,
 
@@ -83,16 +83,15 @@ CREATE TABLE [dbo].[LERC_Spp_Table](
 	[RecTLIKey] [char](16) NULL,
 	[RecTVKey] [char](16) NULL,
 
-	[LastUpdated] [date] NULL,
-	[VersionDate] [date] NULL,
+	[LastUpdated] [smalldatetime] NULL,
+	[VersionDate] [smalldatetime] NULL,
 
 	[MI_STYLE] [varchar](254) NULL,
-	[MI_PRINX] [int] IDENTITY(1,1) NOT NULL,
 	[SP_GEOMETRY] [geometry] NULL,
 
- CONSTRAINT [PK_LERC_Spp_Table_MI_PRINX] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PK_LERC_Spp_Table_RecOccKey] PRIMARY KEY CLUSTERED 
 (
-	[MI_PRINX] ASC
+	[RecOccKey] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 
