@@ -40,10 +40,6 @@ CREATE PROCEDURE dbo.AFSpatialiseSppView
 	@Schema varchar(50),
 	@Table varchar(50),
 	@View varchar(50),
-	@XMin Int,
-	@XMax Int,
-	@YMin Int,
-	@YMax Int,
 	@SizeMin Int,
 	@SizeMax Int,
 	@PointMax Int,
@@ -62,10 +58,6 @@ BEGIN
 	@Schema			The schema for the table to be spatialised.
 	@Table			The name of the table to be spatialised.
 	@View			The name of the view defining the table's spatial data.
-	@XMin			The minimum value for the eastings to be spatialised.
-	@XMin			The maximum value for the eastings to be spatialised.
-	@XMin			The minimum value for the nothings to be spatialised.
-	@XMin			The maximum value for the nothings to be spatialised.
 	@SizeMin		The minimum value for the precision to be spatialised.
 	@SizeMax		The maximum value for the precision to be spatialised.
 	@PointMax		The maximum value for the precision when points will be
@@ -76,7 +68,18 @@ BEGIN
 	@BuildIndex		If a spatial index should be built (0 = No, 1 = Yes).
 
   Created:			Apr 2016
-  Last revised:		Jul 2018
+  Last revised:		Dec 2018
+
+ *****************  Version 10  ****************
+ Author: Andy Foy		Date: 13/12/2018
+ A. Include schema in all references to table name.
+ B. Use schema parameter when calling stored procedures
+    and user functions.
+
+ *****************  Version 9  *****************
+ Author: Andy Foy		Date: 01/12/2018
+ A. Correct bug passing parameters to ufn.
+ B. Remove min and max X and Y limits for spatialising.
 
  *****************  Version 8  *****************
  Author: Andy Foy		Date: 12/07/2018
@@ -185,7 +188,7 @@ BEGIN
 	\*---------------------------------------------------------------------------*/
 
 	-- Add a new non-clustered index on the XColumn field if it doesn't already exists
-	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn)
+	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding XColumn field index ...'
@@ -196,7 +199,7 @@ BEGIN
 	END
 	
 	-- Add a new non-clustered index on the YColumn field if it doesn't already exists
-	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @YColumn)
+	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @YColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding YColumn field index ...'
@@ -207,7 +210,7 @@ BEGIN
 	END
 
 	-- Add a new non-clustered index on the SizeColumn field if it doesn't already exists
-	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @SizeColumn)
+	if not exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @SizeColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding SizeColumn field index ...'
@@ -221,7 +224,7 @@ BEGIN
 		Drop the spatial index on the geometry field (if it already exists)
 	\*---------------------------------------------------------------------------*/
 
-	if exists (select name from sys.indexes where name = 'SIndex_' + @Table + '_' + @SpatialColumn AND object_id = (select object_id from sys.objects where name = @Table))
+	if exists (select name from sys.indexes where name = 'SIndex_' + @Table + '_' + @SpatialColumn AND object_id = OBJECT_ID(@Schema + '.' + @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping the spatial index ...'
@@ -237,6 +240,7 @@ BEGIN
 	-- If the MapInfo MapCatalog exists
 	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
 	BEGIN
+
 		-- Add a new MapInfo style field if it doesn't already exists
 		if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_STYLE')
 		BEGIN
@@ -248,28 +252,29 @@ BEGIN
 			EXEC (@sqlcommand)
 		END
 	
-		-- Add a new primary key if it doesn't already exists
-		if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX')
-		BEGIN
-			If @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new MI_PRINX field ...'
+		---- Add a new primary key if it doesn't already exists
+		--if not exists (select column_name from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX')
+		--BEGIN
+		--	If @debug = 1
+		--		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new MI_PRINX field ...'
+	    --
+		--	SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
+		--		' ADD MI_PRINX Int IDENTITY'
+		--	EXEC (@sqlcommand)
+		--END
 	
-			SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
-				' ADD MI_PRINX Int IDENTITY'
-			EXEC (@sqlcommand)
-		END
-	
-		-- Add a new sequential index on the primary key if it doesn't already exists
-		if not exists (select column_name from INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX' and CONSTRAINT_NAME = 'PK_' + @Table + '_MI_PRINX')
-		BEGIN
-			If @debug = 1
-				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new primary index ...'
-	
-			SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
-				' ADD CONSTRAINT PK_' + @Table + '_MI_PRINX' +
-				' PRIMARY KEY(MI_PRINX)'
-			EXEC (@sqlcommand)
-		END
+		---- Add a new sequential index on the primary key if it doesn't already exists
+		--if not exists (select column_name from INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE where TABLE_SCHEMA = @Schema and TABLE_NAME = @Table and COLUMN_NAME = 'MI_PRINX' and CONSTRAINT_NAME = 'PK_' + @Table + '_MI_PRINX')
+		--BEGIN
+		--	If @debug = 1
+		--		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Adding new primary index ...'
+	    --
+		--	SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table +
+		--		' ADD CONSTRAINT PK_' + @Table + '_MI_PRINX' +
+		--		' PRIMARY KEY(MI_PRINX)'
+		--	EXEC (@sqlcommand)
+		--END
+
 	END
 	
 	/*---------------------------------------------------------------------------*\
@@ -300,13 +305,9 @@ BEGIN
 
 		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
 						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
-						  'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						  'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
-						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
-						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
-						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
-						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
-						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  @Schema + '.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', 0) + ' + ''' ''' + ' + ' +
+						  @Schema + '.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', 0) + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
 						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
 						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
 
@@ -323,13 +324,9 @@ BEGIN
 
 		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
 						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
-						  'dbo.AFReturnMidEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						  'dbo.AFReturnMidNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
-						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
-						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
-						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
-						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
-						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  @Schema + '.AFReturnMidEastings(' + @XColumn + ', ' + @SizeColumn + ', 0) + ' + ''' ''' + ' + ' +
+						  @Schema + '.AFReturnMidNorthings(' + @YColumn + ', ' + @SizeColumn + ', 0) + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
 						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
 						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
 
@@ -346,13 +343,9 @@ BEGIN
 
 		SET @sqlcommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
 						  'SET ' + @SpatialColumn + ' = geometry::STPointFromText(''POINT ('' + ' +
-						  'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + ' +
-						  'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ') + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
-						  'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
-						  ' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
-						  ' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
-						  ' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
-						  ' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						  @Schema + '.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ', 0) + ' + ''' ''' + ' + ' +
+						  @Schema + '.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ', 0) + ' + ''' ''' + ' + '')'', ' + CAST(@SRID As varchar) + ') ' +
+						  'WHERE ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
 						  ' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
 						  ' AND ' + @SizeColumn + ' <= ' + CAST(@PointMax As varchar)
 
@@ -380,22 +373,18 @@ BEGIN
 
 	SET @sqlCommand = 'UPDATE ' + @Schema + '.' + @Table + ' ' +
 						'SET ' + @SpatialColumn + ' = geometry::STPolyFromText(''POLYGON (('' + ' +
-						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''', ''' + ' + ' + 
-						'dbo.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
-						'dbo.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + @PolyMin + ') + ' + ''' ''' + ' + ' +
+						@Schema + '.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''' ''' + ' + ' +
+						@Schema + '.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''', ''' + ' + ' + 
+						@Schema + '.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''' ''' + ' + ' +
+						@Schema + '.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''', ''' + ' + ' + 
+						@Schema + '.AFReturnUpperEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''' ''' + ' + ' +
+						@Schema + '.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''', ''' + ' + ' + 
+						@Schema + '.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''' ''' + ' + ' +
+						@Schema + '.AFReturnUpperNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''', ''' + ' + ' + 
+						@Schema + '.AFReturnLowerEastings(' + @XColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''' ''' + ' + ' +
+						@Schema + '.AFReturnLowerNorthings(' + @YColumn + ', ' + @SizeColumn + ', ' + CAST(@PolyMin As varchar) + ') + ' + ''' ''' + ' + ' +
 						'''))'', ' + CAST(@SRID As varchar) + ') ' +
-						'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
-						' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
-						' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
-						' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
-						' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						'WHERE ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
 						' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar) +
 						' AND ' + @SizeColumn + ' > ' + CAST(@PointMax As varchar)
 
@@ -426,16 +415,12 @@ BEGIN
 		@Y2 int
 
 	-- Retrieve the geometric extent values and store as variables
-	SET @sqlcommand = 'SELECT @O1 = MIN(' + @XColumn + '), ' +
-							 '@O2 = MIN(' + @YColumn + '), ' +
+	SET @sqlcommand = 'SELECT @O1 = MIN(' + @XColumn + ') - MAX(' + @SizeColumn + '), ' +
+							 '@O2 = MIN(' + @YColumn + ') - MAX(' + @SizeColumn + '), ' +
 							 '@O3 = MAX(' + @XColumn + ') + MAX(' + @SizeColumn + '), ' +
 							 '@O4 = MAX(' + @YColumn + ') + MAX(' + @SizeColumn + ')' +
 						'FROM ' + @Schema + '.' + @Table + ' ' +
-						'WHERE ' + @XColumn + ' >= ' + CAST(@XMin As varchar) +
-						' AND ' + @XColumn + ' <= ' + CAST(@XMax As varchar) + 
-						' AND ' + @YColumn + ' >= ' + CAST(@YMin As varchar) +
-						' AND ' + @YColumn + ' <= ' + CAST(@YMax As varchar) +
-						' AND ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
+						'WHERE ' + @SizeColumn + ' >= ' + CAST(@SizeMin As varchar) +
 						' AND ' + @SizeColumn + ' <= ' + CAST(@SizeMax As varchar)
 
 	SET @params =	'@O1 int OUTPUT, ' +
@@ -476,7 +461,7 @@ BEGIN
 	\*---------------------------------------------------------------------------*/
 
 	-- Drop the non-clustered index on the XColumn field
-	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn)
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @XColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping XColumn field index ...'
@@ -487,7 +472,7 @@ BEGIN
 	END
 
 	-- Drop the non-clustered index on the YColumn field
-	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @YColumn)
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @YColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping YColumn field index ...'
@@ -498,7 +483,7 @@ BEGIN
 	END
 
 	-- Drop the non-clustered index on the SizeColumn field
-	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @SizeColumn)
+	if exists (select name from sys.indexes where name = 'IX_' + @View + '_' + @SizeColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping SizeColumn field index ...'
@@ -515,7 +500,7 @@ BEGIN
 	-- If the MapInfo MapCatalog exists then update it
 	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
 	BEGIN
-		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @View + ''', ''' + @XColumn + ''', ''' + @YColumn +
+		SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @View + ''', ''' + @XColumn + ''', ''' + @YColumn +
 			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecTot As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 		EXEC (@sqlcommand)
 	END

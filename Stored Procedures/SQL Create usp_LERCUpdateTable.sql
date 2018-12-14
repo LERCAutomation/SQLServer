@@ -3,6 +3,8 @@ CREATE PROCEDURE [dbo].[LERCUpdateTable]
 AS
 BEGIN
 
+	SET NOCOUNT ON
+
 	/*===========================================================================*\
 	  Description:
 			Extracts species occurrences and associated details from the
@@ -12,9 +14,16 @@ BEGIN
 	  Parameters:		None
 	
 	  Created:			Jul 2017
-	  Last revised:		Jul 2018
+	  Last revised: 	Dec 2018
+
+	 *****************  Version 8  ****************
+	 Author: Andy Foy		Date: 02/12/2018
+	 A. Performance improvements.
+	 B. Add primary key to all temporary tables.
+	 C. Improve message logging.
+	 D. Switch to ufn 'AFFormatEventRecorders' for speed.
 	
-	 *****************  Version 7  *****************
+	 *****************  Version 7  ****************
 	 Author: Andy Foy		Date: 31/07/2018
 	 A. Indicate truncation of Comments, DeterminerComments
 	    and SampleComments with ' ...'.
@@ -81,6 +90,12 @@ BEGIN
 		DROP INDEX [SIndex_LERC_Spp_Table_SP_GEOMETRY] ON [dbo].[LERC_Spp_Table]
 	END
 	
+--	IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[dbo].[LERC_Spp_Table]') AND name = N'PK_LERC_Spp_Table_RecOccKey')
+--	BEGIN
+--		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping primary RecOccKey from LERC_Spp_Table'
+--		ALTER TABLE [dbo].[LERC_Spp_Table] DROP CONSTRAINT [PK_LERC_Spp_Table_RecOccKey]
+--	END
+
 	IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[dbo].[LERC_Spp_Table]') AND name = N'IX_LERC_Spp_Table_Confidential')
 	BEGIN
 		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping Confidential index from LERC_Spp_Table'
@@ -115,11 +130,11 @@ BEGIN
 		Drop temporary indexes
 	\*---------------------------------------------------------------------------*/
 	
-	IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[dbo].[LERC_Spp_Table]') AND name = N'IX_LERC_Spp_Table_RecOccKey')
-	BEGIN
-		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary TOCC index from LERC_Spp_Table'
-		DROP INDEX [IX_LERC_Spp_Table_RecOccKey] ON [dbo].[LERC_Spp_Table] WITH ( ONLINE = OFF )
-	END
+	--IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[dbo].[LERC_Spp_Table]') AND name = N'IX_LERC_Spp_Table_RecOccKey')
+	--BEGIN
+	--	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary TOCC index from LERC_Spp_Table'
+	--	DROP INDEX [IX_LERC_Spp_Table_RecOccKey] ON [dbo].[LERC_Spp_Table] WITH ( ONLINE = OFF )
+	--END
 	
 	IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[dbo].[LERC_Spp_Table]') AND name = N'IX_LERC_Spp_Table_RecTLIKey')
 	BEGIN
@@ -156,20 +171,30 @@ BEGIN
 	\*---------------------------------------------------------------------------*/
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Truncating table LERC_Spp_Table'
+
 	TRUNCATE TABLE LERC_Spp_Table
 	
+	/*---------------------------------------------------------------------------*\
+		Add primary key
+	\*---------------------------------------------------------------------------*/
+
+	IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[dbo].[LERC_Spp_Table]') AND name = N'PK_LERC_Spp_Table_RecOccKey')
+	BEGIN
+		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary RecOccKey to LERC_Spp_Table'
+		ALTER TABLE [dbo].[LERC_Spp_Table] ADD CONSTRAINT PK_LERC_Spp_Table_RecOccKey PRIMARY KEY(RecOccKey)
+	END
+
 	/*---------------------------------------------------------------------------*\
 		Insert occurrence keys
 	\*---------------------------------------------------------------------------*/
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Inserting verified and checked occurrences into LERC_Spp_Table'
 	
-	DECLARE @VersionDate [date]
-	SET @VersionDate = CONVERT(date, GETDATE())
+	DECLARE @VersionDate [datetime]
+	SET @VersionDate = GETDATE()
 	
 	INSERT INTO LERC_Spp_Table (RecOccKey, RecTLIKey, RecSamKey, RecType, Provenance,
-		VersionDate, NegativeRec, Confidential, Verification, HistoricRec, Sensitive, SurveyRef,
-		Abundance, AbundanceCount)
+		VersionDate, NegativeRec, Confidential, Verification, HistoricRec, Sensitive, SurveyRef)
 	SELECT TOCC.TAXON_OCCURRENCE_KEY,
 		TDET.TAXON_LIST_ITEM_KEY,
 		S.SAMPLE_KEY,
@@ -181,9 +206,7 @@ BEGIN
 		DT.SHORT_NAME,
 		'N',
 		'N',
-		TOCC.SURVEYORS_REF,
-		LEFT(dbo.AFFormatAbundanceDataLERC(TOCC.TAXON_OCCURRENCE_KEY),150),
-		dbo.AFAbundanceValue(TOCC.TAXON_OCCURRENCE_KEY)
+		TOCC.SURVEYORS_REF
 	FROM TAXON_OCCURRENCE TOCC
 	INNER JOIN SAMPLE S ON S.SAMPLE_KEY = TOCC.SAMPLE_KEY
 	INNER JOIN TAXON_DETERMINATION TDET ON TDET.TAXON_OCCURRENCE_KEY = TOCC.TAXON_OCCURRENCE_KEY
@@ -196,7 +219,7 @@ BEGIN
 	AND S.SPATIAL_REF_SYSTEM <> 'LTLN'
 	AND S.SPATIAL_REF IS NOT NULL
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Update last updated date
@@ -213,21 +236,24 @@ BEGIN
 	CREATE TABLE #LastUpdated
 	(
 		TOCCKey char(16) COLLATE database_default NOT NULL,
-		LastEntered date NULL,
-		LastChanged date NULL
+		LastEntered smalldatetime NULL,
+		LastChanged smalldatetime NULL
 	)
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary TOCCKey to temporary last updated table'
+
+	ALTER TABLE #LastUpdated ADD CONSTRAINT PK_LastUpdated_TOCCKey PRIMARY KEY(TOCCKey)
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary last updated table'
 
 	INSERT INTO #LastUpdated (TOCCKey, LastEntered, LastChanged)
 	SELECT TOCC.Taxon_Occurrence_Key,
-		CONVERT(date, CASE WHEN TOCC.ENTRY_DATE > TDET.ENTRY_DATE THEN TOCC.ENTRY_DATE ELSE TDET.ENTRY_DATE END),
-		CONVERT(date, CASE WHEN TOCC.CHANGED_DATE > TDET.CHANGED_DATE THEN TOCC.CHANGED_DATE ELSE TDET.CHANGED_DATE END)
+		CASE WHEN TOCC.ENTRY_DATE > TDET.ENTRY_DATE THEN TOCC.ENTRY_DATE ELSE TDET.ENTRY_DATE END,
+		CASE WHEN TOCC.CHANGED_DATE > TDET.CHANGED_DATE THEN TOCC.CHANGED_DATE ELSE TDET.CHANGED_DATE END
 	FROM TAXON_OCCURRENCE TOCC
 	INNER JOIN TAXON_DETERMINATION TDET ON TDET.TAXON_OCCURRENCE_KEY = TOCC.TAXON_OCCURRENCE_KEY AND TDET.PREFERRED = 1
-	ORDER BY TOCC.Taxon_Occurrence_Key
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary last updated table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary last updated table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting last updated in LERC_Spp_Table'
 
@@ -236,9 +262,9 @@ BEGIN
 	FROM LERC_Spp_Table Spp
 	INNER JOIN #LastUpdated Last ON Last.TOCCKey = Spp.RecOccKey
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary last updated table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary last updated table'
 
 	DROP TABLE #LastUpdated
 
@@ -246,12 +272,6 @@ BEGIN
 		Adding temporary indexes
 	\*---------------------------------------------------------------------------*/
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding temporary TOCC index to LERC_Spp_Table'
-	
-	CREATE NONCLUSTERED INDEX [IX_LERC_Spp_Table_RecOccKey] ON [dbo].[LERC_Spp_Table] 
-	( [RecOccKey] ASC )
-	WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding temporary TLIK index to LERC_Spp_Table'
 	
 	CREATE NONCLUSTERED INDEX [IX_LERC_Spp_Table_RecTLIKey] ON [dbo].[LERC_Spp_Table] 
@@ -304,15 +324,22 @@ BEGIN
 		Location2 varchar(100) COLLATE database_default NULL,
 		SampleType varchar(20) COLLATE database_default NULL,
 		SampleComments varchar(254) COLLATE database_default NULL,
+		SampleCommentsLen int NULL,
 		PrivateLocation varchar(100) COLLATE database_default NULL,
 		PrivateCode varchar(20) COLLATE database_default NULL,
-		LastUpdated date NULL
+		LastEntered smalldatetime NULL,
+		LastChanged smalldatetime NULL,
+		LastUpdated smalldatetime NULL
 	)
-	
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary SampleKey to temporary sample table'
+
+	ALTER TABLE #SampleDets ADD CONSTRAINT PK_SampleDets_SampleKey PRIMARY KEY(SampleKey)
+
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary sample table'
 	
-	INSERT INTO #SampleDets (SampleKey, VagueDateStart, VagueDateEnd, VagueDateType, GridRef, RefSystem, GRQualifier,
-		RecSurKey, SampleType, RecLocKey, SampleComments, PrivateLocation, PrivateCode)
+	INSERT INTO #SampleDets (SampleKey, VagueDateStart, VagueDateEnd, VagueDateType, GridRef, RefSystem,
+		GRQualifier, RecSurKey, SampleType, Location2, RecLocKey, SampleComments, SampleCommentsLen, PrivateLocation, PrivateCode, LastEntered, LastChanged)
 	SELECT S.SAMPLE_KEY,
 		S.VAGUE_DATE_START,
 		S.VAGUE_DATE_END,
@@ -322,41 +349,41 @@ BEGIN
 		S.SPATIAL_REF_QUALIFIER,
 		SV.SURVEY_KEY,
 		ST.SHORT_NAME,
+		S.LOCATION_NAME,
 		S.LOCATION_KEY,
 		Left(dbo.ufn_RtfToPlaintext(S.COMMENT), 254),
+		Len(dbo.ufn_RtfToPlaintext(S.COMMENT)),
 		CASE WHEN S.PRIVATE_LOCATION = '' THEN NULL ELSE S.PRIVATE_LOCATION END,
-		CASE WHEN S.PRIVATE_CODE = '' THEN NULL ELSE S.PRIVATE_CODE END
+		CASE WHEN S.PRIVATE_CODE = '' THEN NULL ELSE S.PRIVATE_CODE END,
+		(SELECT MAX(x) FROM (VALUES (S.ENTRY_DATE), (SE.ENTRY_DATE), (SV.ENTRY_DATE)) AS value(x)),
+		(SELECT MAX(y) FROM (VALUES (S.CHANGED_DATE), (SE.CHANGED_DATE), (SV.CHANGED_DATE)) AS value(y))
 	FROM SAMPLE S
 	INNER JOIN SAMPLE_TYPE ST ON ST.SAMPLE_TYPE_KEY = S.SAMPLE_TYPE_KEY
 	INNER JOIN SURVEY_EVENT SE ON SE.SURVEY_EVENT_KEY = S.SURVEY_EVENT_KEY
 	INNER JOIN SURVEY SV ON SV.SURVEY_KEY = SE.SURVEY_KEY
 	WHERE S.SPATIAL_REF_SYSTEM <> 'LTLN'
 	AND S.SPATIAL_REF IS NOT NULL
-	ORDER BY S.SAMPLE_KEY
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary sample table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting Recorders and Last Updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting Recorder and Last Updated in temporary sample table'
 
 	UPDATE #SampleDets
-	SET Recorder = LEFT(dbo.FormatEventRecorders(SampleKey), 150),
-	    LastUpdated = dbo.AFSampleLastUpdated(SampleKey, 2)
+	SET Recorder = LEFT(dbo.AFFormatEventRecorders(SampleKey), 150),
+		LastUpdated = CASE WHEN LastChanged > LastEntered THEN LastChanged ELSE LastEntered END
+--	    LastUpdated = dbo.AFSampleLastUpdated(SampleKey, 2)
 	FROM #SampleDets Dets
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting locations in temporary sample table'
-	
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting Location in temporary sample table'
+
 	UPDATE #SampleDets
-	SET	Location = LN.ITEM_NAME,
-		Location2 = S.LOCATION_NAME
-		--Location2 = CASE WHEN SE.LOCATION_NAME IS NULL THEN S.LOCATION_NAME ELSE SE.LOCATION_NAME END
+	SET Location = LN.ITEM_NAME
 	FROM #SampleDets Dets
-	INNER JOIN SAMPLE S ON S.SAMPLE_KEY = Dets.SampleKey
-	INNER JOIN SURVEY_EVENT SE ON SE.SURVEY_EVENT_KEY = S.SURVEY_EVENT_KEY
-	LEFT JOIN LOCATION_NAME LN ON LN.LOCATION_KEY = SE.LOCATION_KEY AND LN.PREFERRED = 1
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INNER JOIN LOCATION_NAME LN ON LN.LOCATION_KEY = Dets.RecLocKey AND LN.PREFERRED = 1
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating Locations to remove invalid characters in temporary sample table'
 
@@ -365,7 +392,7 @@ BEGIN
 	FROM #SampleDets Dets
 	WHERE Location IS NOT NULL
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating Locations2 to remove invalid characters in temporary sample table'
 
@@ -374,7 +401,7 @@ BEGIN
 	FROM #SampleDets Dets
 	WHERE Location2 IS NOT NULL
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating Locations to title case in temporary sample table'
 	
@@ -384,7 +411,7 @@ BEGIN
 	WHERE Location = UPPER(Location) COLLATE Latin1_General_CS_AS
 	OR    Location = LOWER(Location) COLLATE Latin1_General_CS_AS
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating Locations2 to title case in temporary sample table'
 	
@@ -394,7 +421,7 @@ BEGIN
 	WHERE Location2 = UPPER(Location2) COLLATE Latin1_General_CS_AS
 	OR    Location2 = LOWER(Location2) COLLATE Latin1_General_CS_AS
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
 	--INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Replacing locations in temporary sample table'
 	
@@ -405,7 +432,7 @@ BEGIN
 	--WHERE Location IS NULL
 	--AND Location2 IS NOT NULL AND Location2 <> ''
 	
-	--INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	--INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating truncated sample comments in temporary sample table'
 
@@ -414,9 +441,9 @@ BEGIN
 	FROM #SampleDets Dets
 	INNER JOIN SAMPLE S ON S.SAMPLE_KEY = Dets.SampleKey
 	WHERE SampleComments IS NOT NULL
-	AND LEN(dbo.ufn_RtfToPlaintext(S.COMMENT)) > 254
+	AND SampleCommentsLen > 254
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
 	IF OBJECT_ID('tempdb..#SurveyDets') IS NOT NULL
 	BEGIN
@@ -434,6 +461,10 @@ BEGIN
 		SurveyTags varchar(250) COLLATE database_default NULL
 	)
 
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary SurveyKey to temporary survey table'
+
+	ALTER TABLE #SurveyDets ADD CONSTRAINT PK_SurveyDets_SurveyKey PRIMARY KEY(SurveyKey)
+
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary survey table'
 
 	INSERT INTO #SurveyDets (SurveyKey, SurveyName, SurveyRunBy, SurveyTags)
@@ -442,9 +473,8 @@ BEGIN
 		dbo.ufn_GetFormattedName(SV.RUN_BY),
 		dbo.ufn_GetSurveyTagString(SV.SURVEY_KEY)
 	FROM SURVEY SV
-	ORDER BY SV.SURVEY_KEY
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary survey table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary survey table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting survey details in temporary sample table'
 
@@ -455,9 +485,9 @@ BEGIN
 	FROM #SampleDets SamDets
 	INNER JOIN #SurveyDets SurDets ON SurDets.SurveyKey = SamDets.RecSurKey
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary survey table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary survey table'
 
 	DROP TABLE #SurveyDets
 
@@ -471,14 +501,18 @@ BEGIN
 
 	CREATE TABLE #SampleDates
 	(
-		VagueDateStart int NULL,
-		VagueDateEnd int NULL,
-		VagueDateType varchar(2) COLLATE database_default NULL,
+		VagueDateStart int NOT NULL,
+		VagueDateEnd int NOT NULL,
+		VagueDateType varchar(2) COLLATE database_default NOT NULL,
 		RecDate varchar(40) COLLATE database_default NULL,
 		RecYear int NULL,
 		RecMonthStart int NULL,
 		RecMonthEnd int NULL
 	)
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary VagueDateKey to temporary sample dates table'
+
+	ALTER TABLE #SampleDates ADD CONSTRAINT PK_SampleDates_VagueDate PRIMARY KEY(VagueDateStart,VagueDateEnd,VagueDateType)
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary sample dates table'
 
@@ -487,8 +521,11 @@ BEGIN
 		S.VAGUE_DATE_END,
 		S.VAGUE_DATE_TYPE
 	FROM SAMPLE S
+	WHERE S.VAGUE_DATE_START IS NOT NULL
+	AND S.VAGUE_DATE_END IS NOT NULL
+	AND S.VAGUE_DATE_TYPE IS NOT NULL
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary sample dates table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary sample dates table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating temporary sample dates table'
 
@@ -499,8 +536,14 @@ BEGIN
 		RecMonthEnd = CASE WHEN VagueDateEnd IS NULL THEN 0 ELSE dbo.FormatDatePart(VagueDateEnd, VagueDateEnd, VagueDateType, 1) END
 	FROM #SampleDates
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample dates table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample dates table'
 
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding VagueDateKey index to temporary sample table'
+
+	CREATE NONCLUSTERED INDEX [IX_SampleDets_VagueDateKey] ON #SampleDets 
+	( [VagueDateStart] ASC, [VagueDateEnd] ASC, [VagueDateType] ASC )
+	WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting sample dates in temporary sample table'
 
 	UPDATE #SampleDets
@@ -516,9 +559,9 @@ BEGIN
 		AND SamDates.VagueDateEnd = SamDets.VagueDateEnd
 		AND SamDates.VagueDateType = SamDets.VagueDateType
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary sample dates table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary sample dates table'
 
 	DROP TABLE #SampleDates
 
@@ -532,14 +575,18 @@ BEGIN
 
 	CREATE TABLE #SampleGR
 	(
-		GridRef varchar(12) COLLATE database_default NULL,
-		RefSystem varchar(4) COLLATE database_default NULL,
+		GridRef varchar(12) COLLATE database_default NOT NULL,
+		RefSystem varchar(4) COLLATE database_default NOT NULL,
 		Grid10k varchar(4) COLLATE database_default NULL,
 		Grid1k varchar(6) COLLATE database_default NULL,
 		GRPrecision int NULL,
 		Easting int NULL,
 		Northing int NULL
 	)
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary GridRef to temporary gridrefs table'
+
+	ALTER TABLE #SampleGR ADD CONSTRAINT PK_SampleGR_GridRef PRIMARY KEY(GridRef,RefSystem)
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary sample gridrefs table'
 
@@ -550,7 +597,7 @@ BEGIN
 	WHERE S.SPATIAL_REF_SYSTEM <> 'LTLN'
 	AND S.SPATIAL_REF IS NOT NULL
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary sample gridrefs table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary sample gridrefs table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating temporary sample gridrefs table'
 
@@ -562,7 +609,7 @@ BEGIN
 		Northing = dbo.LCRETURNNORTHINGSV2(GridRef, RefSystem, 1)
 	FROM #SampleGR
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample gridrefs table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample gridrefs table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting sample gridrefs in temporary sample table'
 
@@ -576,14 +623,14 @@ BEGIN
 	INNER JOIN #SampleGR SamGR ON SamGR.GridRef = SamDets.GridRef
 		AND SamGR.RefSystem = SamDets.RefSystem
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary sample table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary sample table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary sample gridrefs table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary sample gridrefs table'
 
 	DROP TABLE #SampleGR
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting sample details in LERC_Spp_Table'
-	
+
 	UPDATE LERC_Spp_Table
 	SET VagueDateStart = Dets.VagueDateStart,
 		VagueDateEnd = Dets.VagueDateEnd,
@@ -617,10 +664,10 @@ BEGIN
 	FROM LERC_Spp_Table Spp
 	INNER JOIN #SampleDets Dets ON Dets.SampleKey = Spp.RecSamKey
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary sample table'
-	
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary sample table'
+
 	DROP TABLE #SampleDets
 	
 	/*---------------------------------------------------------------------------*\
@@ -634,7 +681,7 @@ BEGIN
 	INNER JOIN LERC_Surveys LSV ON LSV.SurveyName LIKE Spp.SurveyName
 	WHERE LSV.Exclude = 'Y'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows deleted from LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows deleted from LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Update taxon occurrence comment details
@@ -648,7 +695,7 @@ BEGIN
 	INNER JOIN TAXON_OCCURRENCE TOCC ON TOCC.TAXON_OCCURRENCE_KEY = Spp.RecOccKey
 	WHERE TOCC.COMMENT IS NOT NULL
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating taxon occurrence comments with full-stops in LERC_Spp_Table'
 
@@ -657,7 +704,7 @@ BEGIN
 	FROM LERC_Spp_Table Spp
 	WHERE COMMENTS = '.' OR COMMENTS = ''
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating taxon occurrence comments with CRLFs in LERC_Spp_Table'
 
@@ -667,7 +714,7 @@ BEGIN
 	WHERE Spp.Comments IS NOT NULL
 	AND Right(Spp.Comments, 2) = Char(13) + CHAR(10)
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating taxon occurrence comments with CRs/LFs/Tabs in LERC_Spp_Table'
 
@@ -679,7 +726,7 @@ BEGIN
 	OR   Spp.Comments LIKE '%' + CHAR(10) + '%'
 	OR   Spp.Comments LIKE '%' + CHAR(13) + '%')
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating inches in taxon occurrence comments in LERC_Spp_Table'
 
@@ -688,7 +735,7 @@ BEGIN
 	FROM LERC_Spp_Table Spp
 	WHERE Comments LIKE '%"%' AND Comments NOT LIKE '%"%"%' AND Comments NOT LIKE '"%'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating double quotes in taxon occurrence comments in LERC_Spp_Table'
 
@@ -697,7 +744,7 @@ BEGIN
 	FROM LERC_Spp_Table Spp
 	WHERE Comments LIKE '%"%'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating truncated taxon occurrence comments in LERC_Spp_Table'
 
@@ -708,7 +755,7 @@ BEGIN
 	WHERE Comments IS NOT NULL
 	AND LEN(dbo.ufn_RtfToPlaintext(TOCC.COMMENT)) > 254
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Update determiner comment details
@@ -722,17 +769,17 @@ BEGIN
 	INNER JOIN TAXON_DETERMINATION TDET ON TDET.TAXON_OCCURRENCE_KEY = Spp.RecOccKey AND TDET.PREFERRED = 1
 	AND TDET.COMMENT IS NOT NULL
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating determiner comments with CRLFs in LERC_Spp_Table'
 
 	UPDATE LERC_Spp_Table
-	SET	DeterminerComments = Left(Spp.DeterminerComments, Len(RTrim(Replace(Spp.DeterminerComments, Char(13) + CHAR(10), '  '))))
+	SET	DeterminerComments = Left(Spp.DeterminerComments, Len(RTrim(Replace(Spp.DeterminerComments, Char(13) + CHAR(10), ' '))))
 	FROM LERC_Spp_Table Spp
 	WHERE Spp.DeterminerComments IS NOT NULL
 	AND Right(Spp.DeterminerComments, 2) = Char(13) + CHAR(10)
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating determiner comments with CRs/LFs/Tabs in LERC_Spp_Table'
 
@@ -744,7 +791,7 @@ BEGIN
 	OR   Spp.DeterminerComments LIKE '%' + CHAR(10) + '%'
 	OR   Spp.DeterminerComments LIKE '%' + CHAR(13) + '%')
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating double quotes in determiner comments in LERC_Spp_Table'
 
@@ -753,7 +800,7 @@ BEGIN
 	FROM LERC_Spp_Table Spp
 	WHERE DeterminerComments LIKE '%"%'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating truncated taxon determiner comments in LERC_Spp_Table'
 
@@ -764,56 +811,59 @@ BEGIN
 	WHERE Comments IS NOT NULL
 	AND LEN(dbo.ufn_RtfToPlaintext(TDET.COMMENT)) > 254
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Update observation source
 	\*---------------------------------------------------------------------------*/
 	
-	IF OBJECT_ID('tempdb..#Source') IS NOT NULL
+	IF OBJECT_ID('tempdb..#SourceDets') IS NOT NULL
 	BEGIN
 		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary source table'
-		DROP TABLE #Source
+		DROP TABLE #SourceDets
 	END
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Creating temporary source table'
 	
-	CREATE TABLE #Source
+	CREATE TABLE #SourceDets
 	(
 		SourceKey char(16) COLLATE database_default NOT NULL,
 		ReferenceName varchar(300) COLLATE database_default NULL
 	)
 	
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary SourceKey to temporary source table'
+
+	ALTER TABLE #SourceDets ADD CONSTRAINT PK_SourceDets_SourceKey PRIMARY KEY(SourceKey)
+
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary source table'
 	
-	INSERT INTO #Source (SourceKey)
+	INSERT INTO #SourceDets (SourceKey)
 	SELECT DISTINCT SOURCE_KEY
 	FROM TAXON_OCCURRENCE_SOURCES
-	ORDER BY SOURCE_KEY
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary source table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary source table'
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating temporary source table'
 	
-	UPDATE #Source
+	UPDATE #SourceDets
 	SET ReferenceName = dbo.ufn_GetFormattedReferenceName(SourceKey)
-	FROM #Source Src
+	FROM #SourceDets Src
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary source table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary source table'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting obervation source in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting observation source in LERC_Spp_Table'
 	
 	UPDATE LERC_Spp_Table
 	SET	ObsSource = LEFT(Src.ReferenceName, 254)
 	FROM LERC_Spp_Table Spp
 	INNER JOIN TAXON_OCCURRENCE_SOURCES TOS ON TOS.TAXON_OCCURRENCE_KEY = Spp.RecOccKey
-	INNER JOIN #Source Src ON Src.SourceKey = TOS.SOURCE_KEY
+	INNER JOIN #SourceDets Src ON Src.SourceKey = TOS.SOURCE_KEY
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary source table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary source table'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary source table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary source table'
 	
-	DROP TABLE #Source
+	DROP TABLE #SourceDets
 	
 	/*---------------------------------------------------------------------------*\
 		Update taxon determiner details
@@ -821,60 +871,95 @@ BEGIN
 	
 	IF OBJECT_ID('tempdb..#DeterminerDets') IS NOT NULL
 	BEGIN
-		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary determiner table'
+		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary determiner details table'
 		DROP TABLE #DeterminerDets
 	END
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Creating temporary determiner table'
-	
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Creating temporary determiner details table'
+
 	CREATE TABLE #DeterminerDets
 	(
+		RecOccKey char(16) COLLATE database_default NOT NULL,
 		DeterminerKey char(16) COLLATE database_default NOT NULL,
-		Determiner varchar(60) COLLATE database_default NULL
+		DeterminerName varchar(60) COLLATE database_default NULL
 	)
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary determiner table'
-	
-	INSERT INTO #DeterminerDets (DeterminerKey)
-	SELECT DISTINCT DETERMINER
-	FROM TAXON_DETERMINATION
-	ORDER BY DETERMINER
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary determiner table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding TLIK index to temporary determiner table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary RecOccKey to temporary determiner details table'
+
+	ALTER TABLE #DeterminerDets ADD CONSTRAINT PK_DeterminerDets_RecOccKey PRIMARY KEY(RecOccKey)
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary determiner details table'
+
+	INSERT INTO #DeterminerDets (RecOccKey, DeterminerKey)
+	SELECT TAXON_OCCURRENCE_KEY, DETERMINER
+	FROM TAXON_DETERMINATION TDET
+	WHERE TDET.PREFERRED = 1
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary determiner details table'
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding DeterminerKey index to temporary determiner details table'
 
 	CREATE NONCLUSTERED INDEX [IX_DeterminerDets_DeterminerKey] ON #DeterminerDets 
 	( [DeterminerKey] ASC )
 	WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating temporary determiner table'
-	
+
+	IF OBJECT_ID('tempdb..#Determiners') IS NOT NULL
+	BEGIN
+		INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary determiners table'
+		DROP TABLE #Determiners
+	END
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Creating temporary determiners table'
+
+	CREATE TABLE #Determiners
+	(
+		DeterminerKey char(16) COLLATE database_default NOT NULL,
+		DeterminerName varchar(60) COLLATE database_default NULL
+	)
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary DeterminerKey to temporary determiners table'
+
+	ALTER TABLE #Determiners ADD CONSTRAINT PK_Determiner_DeterminerKey PRIMARY KEY(DeterminerKey)
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary determiners table'
+
+	INSERT INTO #Determiners (DeterminerKey)
+	SELECT DISTINCT DeterminerKey
+	FROM #DeterminerDets
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary determiners table'
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating temporary determiners table'
+
+	UPDATE #Determiners
+	SET DeterminerName = LEFT(dbo.ufn_GetFormattedName(DeterminerKey), 60)
+	FROM #Determiners Deters
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary determiners table'
+
 	UPDATE #DeterminerDets
-	SET Determiner = LEFT(dbo.ufn_GetFormattedName(DeterminerKey), 60)
+	SET DeterminerName = Deters.DeterminerName
 	FROM #DeterminerDets Dets
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary determiner table'
+	INNER JOIN #Determiners Deters ON Deters.DeterminerKey = Dets.DeterminerKey
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary determiners table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon determiner in LERC_Spp_Table'
 	
 	UPDATE LERC_Spp_Table
 	SET Determiner = 'Available from LERC',
-		PrivateDeterminer = Dets.Determiner
---		PrivateDeterminer = CASE WHEN Dets.Determiner = Spp.Recorder THEN NULL
---						  WHEN EXISTS(SELECT 1 FROM SURVEY_EVENT_RECORDER SER WHERE SER.SURVEY_EVENT_KEY = SE.SURVEY_EVENT_KEY AND SER.NAME_KEY = Dets.DeterminerKey) THEN NULL
---						  ELSE Dets.Determiner END
+		PrivateDeterminer = Dets.DeterminerName
 	FROM LERC_Spp_Table Spp
-	INNER JOIN TAXON_DETERMINATION TDET ON TDET.TAXON_OCCURRENCE_KEY = Spp.RecOccKey
---	INNER JOIN SAMPLE S ON S.SAMPLE_KEY = Spp.RecSamKey
---	INNER JOIN SURVEY_EVENT SE ON SE.SURVEY_EVENT_KEY = S.SURVEY_EVENT_KEY
-	INNER JOIN #DeterminerDets Dets ON Dets.DeterminerKey = TDET.DETERMINER
-	WHERE TDET.PREFERRED = 1
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INNER JOIN #DeterminerDets Dets ON Dets.RecOccKey = Spp.RecOccKey
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary determiner table'
-	
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary determiner table'
+
+	DROP TABLE #Determiners
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary determiner details table'
+
 	DROP TABLE #DeterminerDets
 	
 	/*---------------------------------------------------------------------------*\
@@ -903,25 +988,22 @@ BEGIN
 		GroupOrder int NULL,
 		RecTVKey char(16) COLLATE database_default NULL,
 		StatusEuro varchar(50) COLLATE database_default NULL,
-		StatusUK varchar(100) COLLATE database_default NULL,
+		StatusUK varchar(150) COLLATE database_default NULL,
 		StatusOther varchar(150) COLLATE database_default NULL,
 		StatusINNS varchar(50) COLLATE database_default NULL
 	)
-	
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding primary TLIKey to temporary taxon details table'
+
+	ALTER TABLE #TaxonDets ADD CONSTRAINT PK_TaxonDets_TLIKey PRIMARY KEY(TLIKey)
+
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Populating temporary taxon details table'
 	
 	INSERT INTO #TaxonDets (TLIKey)
 	SELECT DISTINCT Spp.RecTLIKey
 	FROM LERC_Spp_Table Spp
-	ORDER BY Spp.RecTLIKey
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows inserted into temporary taxon details table'
-
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Adding TLIK index to temporary taxon details table'
-
-	CREATE NONCLUSTERED INDEX [IX_TaxonDets_TLIKey] ON #TaxonDets 
-	( [TLIKey] ASC )
-	WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows inserted into temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon group and sort order in temporary taxon details table'
 	
@@ -936,13 +1018,23 @@ BEGIN
 	LEFT JOIN TAXON_GROUP TG ON TG.TAXON_GROUP_KEY = TV.OUTPUT_GROUP_KEY
 	LEFT JOIN LERC_TAXON_GROUPS LTG ON LTG.Taxon_Group_Name = TG.TAXON_GROUP_NAME
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
-	
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Calculating sort order for bats in temporary taxon details table'
+
+	DECLARE @SortOrder int
+	SELECT @SortOrder = Max(SORT_ORDER)
+	FROM TAXON_GROUP
+
+	SET @SortOrder = @SortOrder + 1
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Sort order for bats is ' + CAST(@SortOrder As varchar)
+
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating taxon group and sort order for bats in temporary taxon details table'
 	
 	UPDATE #TaxonDets
 	SET TaxonGroup = 'Mammals - Terrestrial (bats)',
-		GroupOrder = 111
+		GroupOrder = @SortOrder
 	FROM #TaxonDets Dets
 	INNER JOIN INDEX_TAXON_NAME ITN ON ITN.TAXON_LIST_ITEM_KEY = Dets.TLIKey
 	INNER JOIN INDEX_TAXON_NAME ITN2 ON ITN2.RECOMMENDED_TAXON_LIST_ITEM_KEY = ITN.RECOMMENDED_TAXON_LIST_ITEM_KEY
@@ -951,7 +1043,7 @@ BEGIN
 	WHERE ITN3.ACTUAL_NAME = 'Chiroptera'
 	AND TaxonGroup = 'Mammals - Terrestrial (excl. bats)'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating undetermined taxon groups in temporary taxon details table'
 	
@@ -961,7 +1053,7 @@ BEGIN
 	FROM #TaxonDets Dets
 	WHERE TaxonGroup IS NULL
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon rank in temporary taxon details table'
 	
@@ -972,7 +1064,7 @@ BEGIN
 	INNER JOIN TAXON_LIST_ITEM TLI ON TLI.TAXON_LIST_ITEM_KEY = ITN.RECOMMENDED_TAXON_LIST_ITEM_KEY
 	INNER JOIN TAXON_RANK TR ON TR.TAXON_RANK_KEY = TLI.TAXON_RANK_KEY
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon class in temporary taxon details table'
 
@@ -985,7 +1077,7 @@ BEGIN
 	LEFT JOIN TAXON_VERSION TV ON TV.Taxon_Version_key = ITH.Hierarchy_Taxon_Version_key  
 	LEFT JOIN TAXON T ON T.Taxon_Key = TV.Taxon_key
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon order in temporary taxon details table'
 
@@ -998,7 +1090,7 @@ BEGIN
 	LEFT JOIN TAXON_VERSION TV ON TV.Taxon_Version_key = ITH.Hierarchy_Taxon_Version_key  
 	LEFT JOIN TAXON T ON T.Taxon_Key = TV.Taxon_key
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon family in temporary taxon details table'
 
@@ -1011,7 +1103,7 @@ BEGIN
 	LEFT JOIN TAXON_VERSION TV ON TV.Taxon_Version_key = ITH.Hierarchy_Taxon_Version_key  
 	LEFT JOIN TAXON T ON T.Taxon_Key = TV.Taxon_key
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon names and sort order in temporary taxon details table'
 	
@@ -1025,7 +1117,7 @@ BEGIN
 	WHERE ITN.SYSTEM_SUPPLIED_DATA = 1
 	AND ITN2.SYSTEM_SUPPLIED_DATA = 1
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating common names from species in temporary taxon details table'
 	
@@ -1035,7 +1127,7 @@ BEGIN
 	INNER JOIN LERC_TAXON_NAMES LTN ON LTN.TaxonGroup = Dets.TaxonGroup AND LTN.TaxonName = Dets.TaxonName
 	WHERE LTN.DefaultCommonName IS NOT NULL AND LTN.DefaultCommonName <> ''
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating common names from groups in temporary taxon details table'
 	
@@ -1046,7 +1138,7 @@ BEGIN
 	WHERE Dets.TaxonName = Dets.CommonName
 	AND LTG.DefaultCommonName IS NOT NULL AND LTG.DefaultCommonName <> ''
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating taxon statuses in temporary taxon details table'
 	
@@ -1057,7 +1149,7 @@ BEGIN
 		StatusINNS = dbo.AFGetDesignationsLERC(TLIKey,'SR00060400000004')
 	FROM #TaxonDets Dets
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating statuses for mis-designated species in temporary taxon details table'
 	
@@ -1070,9 +1162,9 @@ BEGIN
 	INNER JOIN LERC_TAXON_NAMES LTN ON LTN.TaxonGroup = Dets.TaxonGroup AND LTN.TaxonName = Dets.TaxonName
 	WHERE LTN.NonNotableSpp <> 'Y' AND LTN.OverrideStatus = 'Y'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Clearing statuses for dodgy species in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Clearing statuses for non-notable species in temporary taxon details table'
 	
 	UPDATE #TaxonDets
 	SET StatusEuro = NULL,
@@ -1082,12 +1174,12 @@ BEGIN
 	INNER JOIN LERC_TAXON_NAMES LTN ON LTN.TaxonGroup = Dets.TaxonGroup AND LTN.TaxonName = Dets.TaxonName
 	WHERE LTN.NonNotableSpp = 'Y'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in temporary taxon details table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in temporary taxon details table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting taxon details in LERC_Spp_Table'
 	
 	UPDATE LERC_Spp_Table
-	SET	TaxonName = Dets.TaxonName,
+	SET TaxonName = Dets.TaxonName,
 		CommonName = Dets.CommonName,
 		TaxonRank = Dets.TaxonRank,
 		TaxonGroup = Dets.TaxonGroup,
@@ -1103,12 +1195,11 @@ BEGIN
 		StatusINNS = Dets.StatusINNS
 	FROM LERC_Spp_Table Spp
 	INNER JOIN #TaxonDets Dets ON Dets.TLIKey = Spp.RecTLIKey
-	--WHERE COALESCE(Dets.StatusEuro, Dets.StatusUK, Dets.StatusOther, Dets.StatusINNS) IS NOT NULL
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting temporary taxon details table'
-	
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary taxon details table'
+
 	DROP TABLE #TaxonDets
 	
 	/*---------------------------------------------------------------------------*\
@@ -1123,7 +1214,7 @@ BEGIN
 	INNER JOIN LERC_Surveys LSV ON LSV.SurveyName LIKE Spp.SurveyName
 	WHERE LSV.Confidential = 'Y'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating confidential flag from taxon groups in LERC_Spp_Table'
 	
@@ -1133,7 +1224,7 @@ BEGIN
 	INNER JOIN LERC_TAXON_GROUPS LTG ON LTG.TaxonGroup = Spp.TaxonGroup
 	WHERE LTG.Confidential = 'Y'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating confidential flag from taxon names in LERC_Spp_Table'
 	
@@ -1143,7 +1234,21 @@ BEGIN
 	INNER JOIN LERC_TAXON_NAMES LTN ON LTN.TaxonGroup = Spp.TaxonGroup AND LTN.TaxonName = Spp.TaxonName
 	WHERE LTN.Confidential = 'Y'
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
+
+	/*---------------------------------------------------------------------------*\
+		Update abundance details
+	\*---------------------------------------------------------------------------*/
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Setting abundance details in LERC_Spp_Table'
+
+	UPDATE LERC_Spp_Table
+	SET	Abundance = LEFT(dbo.AFFormatAbundanceDataLERC(Spp.RecOccKey), 150),
+		AbundanceCount = dbo.AFAbundanceValue(Spp.RecOccKey)
+	FROM LERC_Spp_Table Spp
+	LEFT JOIN LERC_TAXON_GROUPS LTG ON LTG.TaxonGroup = Spp.TaxonGroup
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Update location and grid reference for surveys
@@ -1153,24 +1258,36 @@ BEGIN
 	
 	UPDATE LERC_Spp_Table
 	SET Location = LSV.DefaultLocation,
-		Location2 = NULL,
-		Sensitive = 'Y'
+		Location2 = NULL
 	FROM LERC_Spp_Table Spp
 	INNER JOIN LERC_Surveys LSV ON Spp.SurveyName LIKE LSV.SurveyName
 	WHERE LSV.DefaultLocation IS NOT NULL AND LSV.DefaultLocation <> ''
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating grid ref from surveys in LERC_Spp_Table'
 	
 	UPDATE LERC_Spp_Table
-	SET GridRef = dbo.AFSensitiveGR(GridRef, LSV.DefaultGR),
-		Sensitive = 'Y'
+	SET GridRef = dbo.AFSensitiveGR(GridRef, LSV.DefaultGR)
 	FROM LERC_Spp_Table Spp
 	INNER JOIN LERC_Surveys LSV ON Spp.SurveyName LIKE LSV.SurveyName
 	WHERE LSV.DefaultGR IS NOT NULL AND LSV.DefaultGR <> ''
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating grid ref details from surveys in LERC_Spp_Table'
+
+	UPDATE LERC_Spp_Table
+	SET	Grid10k = dbo.FormatGridRef(GridRef, RefSystem, 0),
+		Grid1k = dbo.FormatGridRef(GridRef, RefSystem, 1),
+		GRPrecision = dbo.AFGridRefPrecision(GridRef, RefSystem, 0),
+		Easting = dbo.LCRETURNEASTINGSV2(GridRef, RefSystem, 1),
+		Northing = dbo.LCRETURNNORTHINGSV2(GridRef, RefSystem, 1)
+	FROM LERC_Spp_Table Spp
+	INNER JOIN LERC_Surveys LSV ON Spp.SurveyName LIKE LSV.SurveyName
+	WHERE LSV.DefaultGR IS NOT NULL AND LSV.DefaultGR <> ''
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Update location and grid reference for taxon groups
@@ -1180,24 +1297,36 @@ BEGIN
 	
 	UPDATE LERC_Spp_Table
 	SET Location = LTG.DefaultLocation,
-		Location2 = NULL,
-		Sensitive = 'Y'
+		Location2 = NULL
 	FROM LERC_Spp_Table Spp
 	INNER JOIN LERC_Taxon_Groups LTG ON LTG.TaxonGroup = Spp.TaxonGroup
 	WHERE LTG.DefaultLocation IS NOT NULL AND LTG.DefaultLocation <> ''
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating grid ref from taxon groups in LERC_Spp_Table'
 	
 	UPDATE LERC_Spp_Table
-	SET GridRef = dbo.AFSensitiveGR(GridRef, LTG.DefaultGR),
-		Sensitive = 'Y'
+	SET GridRef = dbo.AFSensitiveGR(GridRef, LTG.DefaultGR)
 	FROM LERC_Spp_Table Spp
 	INNER JOIN LERC_Taxon_Groups LTG ON LTG.TaxonGroup = Spp.TaxonGroup
 	WHERE LTG.DefaultGR IS NOT NULL AND LTG.DefaultGR <> ''
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating grid ref details from taxon groups in LERC_Spp_Table'
+
+	UPDATE LERC_Spp_Table
+	SET Grid10k = dbo.FormatGridRef(GridRef, RefSystem, 0),
+		Grid1k = dbo.FormatGridRef(GridRef, RefSystem, 1),
+		GRPrecision = dbo.AFGridRefPrecision(GridRef, RefSystem, 0),
+		Easting = dbo.LCRETURNEASTINGSV2(GridRef, RefSystem, 1),
+		Northing = dbo.LCRETURNNORTHINGSV2(GridRef, RefSystem, 1)
+	FROM LERC_Spp_Table Spp
+	INNER JOIN LERC_Taxon_Groups LTG ON LTG.TaxonGroup = Spp.TaxonGroup
+	WHERE LTG.DefaultGR IS NOT NULL AND LTG.DefaultGR <> ''
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Update location and grid reference for taxon names
@@ -1207,41 +1336,36 @@ BEGIN
 	
 	UPDATE LERC_Spp_Table
 	SET Location = LTN.DefaultLocation,
-		Location2 = NULL,
-		Sensitive = 'Y'
+		Location2 = NULL
 	FROM LERC_Spp_Table Spp
 	INNER JOIN LERC_Taxon_Names LTN ON LTN.TaxonGroup = Spp.TaxonGroup AND LTN.TaxonName = Spp.TaxonName
 	WHERE LTN.DefaultLocation IS NOT NULL AND LTN.DefaultLocation <> ''
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating grid ref from taxon names in LERC_Spp_Table'
 	
 	UPDATE LERC_Spp_Table
-	SET GridRef = dbo.AFSensitiveGR(GridRef, LTN.DefaultGR),
-		Sensitive = 'Y'
+	SET GridRef = dbo.AFSensitiveGR(GridRef, LTN.DefaultGR)
 	FROM LERC_Spp_Table Spp
 	INNER JOIN LERC_Taxon_Names LTN ON LTN.TaxonGroup = Spp.TaxonGroup AND LTN.TaxonName = Spp.TaxonName
 	WHERE LTN.DefaultGR IS NOT NULL AND LTN.DefaultGR <> ''
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
-	/*---------------------------------------------------------------------------*\
-		Update grid reference details for sensitive records
-	\*---------------------------------------------------------------------------*/
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating grid ref details for sensitive records in LERC_Spp_Table'
-	
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating grid ref details from taxon names in LERC_Spp_Table'
+
 	UPDATE LERC_Spp_Table
 	SET Grid10k = dbo.FormatGridRef(GridRef, RefSystem, 0),
 		Grid1k = dbo.FormatGridRef(GridRef, RefSystem, 1),
 		GRPrecision = dbo.AFGridRefPrecision(GridRef, RefSystem, 0),
-		Easting = dbo.LCRETURNEASTINGSV2(GridRef, RefSystem, 0),
-		Northing = dbo.LCRETURNNORTHINGSV2(GridRef, RefSystem, 0)
+		Easting = dbo.LCRETURNEASTINGSV2(GridRef, RefSystem, 1),
+		Northing = dbo.LCRETURNNORTHINGSV2(GridRef, RefSystem, 1)
 	FROM LERC_Spp_Table Spp
-	WHERE Sensitive = 'Y'
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INNER JOIN LERC_Taxon_Names LTN ON LTN.TaxonGroup = Spp.TaxonGroup AND LTN.TaxonName = Spp.TaxonName
+	WHERE LTN.DefaultGR IS NOT NULL AND LTN.DefaultGR <> ''
+
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 
 	/*---------------------------------------------------------------------------*\
 		Delete invalid occurrences
@@ -1252,16 +1376,17 @@ BEGIN
 	DELETE LERC_Spp_Table
 	FROM LERC_Spp_Table Spp
 	WHERE TaxonName IS NULL
-	OR Easting = 0
-	OR Northing = 0
 	OR GridRef IS NULL
 	OR RecDate IS NULL
 	OR RecDate = 'Unknown'
 	OR RecYear = 9999
 	OR RecYear > YEAR(GETDATE())
 	OR RecYear IS NULL
+	OR VagueDateType = 'U'
+	OR Easting = 0
+	OR Northing = 0
 	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows deleted from LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows deleted from LERC_Spp_Table'
 
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Deleting invalid species from LERC_Spp_Table'
 	
@@ -1270,8 +1395,12 @@ BEGIN
 	INNER JOIN LERC_TAXON_NAMES LTN ON LTN.TaxonGroup = Spp.TaxonGroup AND LTN.TaxonName = Spp.TaxonName
 	WHERE LTN.InvalidSpp = 'Y'
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows deleted from LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows deleted from LERC_Spp_Table'
 	
+	/*---------------------------------------------------------------------------*\
+		Flag historic occurrences
+	\*---------------------------------------------------------------------------*/
+
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating historic flag from taxon names in LERC_Spp_Table'
 	
 	UPDATE LERC_Spp_Table
@@ -1280,7 +1409,7 @@ BEGIN
 	INNER JOIN LERC_TAXON_NAMES LTN ON LTN.TaxonGroup = Spp.TaxonGroup AND LTN.TaxonName = Spp.TaxonName
 	WHERE Spp.RecYear < LTN.EarliestYear
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating historic flag from taxon groups in LERC_Spp_Table'
 	
@@ -1290,15 +1419,11 @@ BEGIN
 	INNER JOIN LERC_TAXON_GROUPS LTG ON LTG.TaxonGroup = Spp.TaxonGroup
 	WHERE Spp.RecYear < LTG.EarliestYear
 
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money)), '.00', '') + ' rows updated in LERC_Spp_Table'
+	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), REPLACE(CONVERT(varchar, CAST(@@RowCount As Money), 1), '.00', '') + ' rows updated in LERC_Spp_Table'
 	
 	/*---------------------------------------------------------------------------*\
 		Drop temporary indexes
 	\*---------------------------------------------------------------------------*/
-	
-	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary TOCC index from LERC_Spp_Table'
-	
-	DROP INDEX [IX_LERC_Spp_Table_RecOccKey] ON [dbo].[LERC_Spp_Table] WITH ( ONLINE = OFF )
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Dropping temporary TLIK index from LERC_Spp_Table'
 	
@@ -1353,8 +1478,11 @@ BEGIN
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Updating spatial attributes in LERC_Spp_Table'
 	
-	EXECUTE dbo.AFSpatialiseSppExtract 'dbo', 'LERC_Spp_Table',  0, 999999, 0, 999999, 1, 10000, 100, 2, 0, 1
+	EXECUTE dbo.AFSpatialiseSppExtract 'dbo', 'LERC_Spp_Table', 1, 10000, 100, 2, 0, 1
 	
 	INSERT INTO LERC_SQL_Update_Results SELECT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ), 'Ended.'
 
+	SET NOCOUNT ON
+
 END
+GO

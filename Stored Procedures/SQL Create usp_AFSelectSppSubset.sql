@@ -3,7 +3,7 @@
   SQL Server table containing a subset of records based on a given set
   of SQL criteria.
   
-  Copyright © 2015 - 2016 Andy Foy Consulting
+  Copyright © 2015 - 2016, 2018 Andy Foy Consulting
   
   This file is used by the 'DataSelector' tool, versions of which are
   available for MapInfo and ArcGIS.
@@ -64,7 +64,12 @@ BEGIN
 					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Jul 2018
+  Last revised:		Dec 2018
+
+ *****************  Version 12  ****************
+ Author: Andy Foy		Date: 13/12/2018
+ A. Use schema parameter when calling stored procedures
+    and user functions.
 
  *****************  Version 11  ****************
  Author: Andy Foy		Date: 13/07/2018
@@ -264,7 +269,7 @@ BEGIN
 	-- If the MapInfo MapCatalog exists then update it
 	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
 	BEGIN
-		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+		SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 		EXEC (@sqlcommand)
 	END
@@ -337,7 +342,7 @@ BEGIN
 		-- If the MapInfo MapCatalog exists then update it
 		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
 		BEGIN
-			SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 			EXEC (@sqlcommand)
 		END
@@ -388,7 +393,7 @@ BEGIN
 		-- If the MapInfo MapCatalog exists then update it
 		If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
 		BEGIN
-			SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+			SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 			EXEC (@sqlcommand)
 		END

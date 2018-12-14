@@ -2,7 +2,7 @@
   AFClearSppSubset is a SQL stored procedure to delete an intermediate
   SQL Server table once it is no longer required.
   
-  Copyright © 2015 - 2016 Andy Foy Consulting
+  Copyright © 2015 - 2016, 2018 Andy Foy Consulting
   
   This file is used by the 'DataSelector' and 'DataExtractor' tools, versions
   of which are available for MapInfo and ArcGIS.
@@ -50,7 +50,11 @@ BEGIN
 	@UserId			The userid of the user executing the selection.
 
   Created:			Sep 2015
-  Last revised:		Jan 2016
+  Last revised:		Dec 2018
+
+ *****************  Version 3  *****************
+ Author: Andy Foy		Date: 13/12/2018
+ A. Include schema in all references to table name.
 
  *****************  Version 2  *****************
  Author: Andy Foy		Date: 18/01/2016
@@ -80,6 +84,7 @@ BEGIN
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary table ...'
+
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
 	END
@@ -89,12 +94,13 @@ BEGIN
 	BEGIN
 
 		-- Delete the MapInfo MapCatalog entry if it exists
-		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable)
+		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable and OWNERNAME = @Schema)
 		BEGIN
 			If @debug = 1
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
+
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
-				' WHERE TABLENAME = ''' + @TempTable + ''''
+				' WHERE TABLENAME = ''' + @TempTable + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
 		END
 
@@ -107,6 +113,7 @@ BEGIN
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary point table ...'
+
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
 	END
@@ -116,12 +123,13 @@ BEGIN
 	BEGIN
 
 		-- Delete the MapInfo MapCatalog entry if it exists
-		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable)
+		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable and OWNERNAME = @Schema)
 		BEGIN
 			If @debug = 1
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
+
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
-				' WHERE TABLENAME = ''' + @TempTable + ''''
+				' WHERE TABLENAME = ''' + @TempTable + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
 		END
 
@@ -134,6 +142,7 @@ BEGIN
 	BEGIN
 		If @debug = 1
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary polygon table ...'
+
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
 	END
@@ -143,12 +152,13 @@ BEGIN
 	BEGIN
 
 		-- Delete the MapInfo MapCatalog entry if it exists
-		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable)
+		if exists (select TABLENAME from [MAPINFO].[MAPINFO_MAPCATALOG] where TABLENAME = @TempTable and OWNERNAME = @Schema)
 		BEGIN
 			If @debug = 1
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
+
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
-				' WHERE TABLENAME = ''' + @TempTable + ''''
+				' WHERE TABLENAME = ''' + @TempTable + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
 		END
 

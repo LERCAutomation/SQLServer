@@ -54,8 +54,8 @@ BEGIN
 					table.
 
   Parameters:
-	@Schema			The schema for the record table.
-	@Table			The name of the table contain the records.
+	@Schema			The schema for the table.
+	@Table			The name of the table containing the records.
 	@XColumn		The name of the column relating to the X coordinates.
 	@YColumn		The name of the column relating to the Y coordinates.
 	@SizeColumn		The name of the column relating to the record size.
@@ -65,7 +65,11 @@ BEGIN
 	@IsSpatial		If the table contains spatial data (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Jan 2016
+  Last revised:		Dec 2018
+
+ *****************  Version 2  *****************
+ Author: Andy Foy		Date: 13/12/2018
+ A. Include schema in all references to table name.
 
  *****************  Version 1  *****************
  Author: Andy Foy		Date: 18/01/2016
@@ -86,13 +90,13 @@ BEGIN
 		DECLARE @params nvarchar(2000)
 
 		-- Delete the MapInfo MapCatalog entry if it already exists
-		IF EXISTS (SELECT TABLENAME FROM [MAPINFO].[MAPINFO_MAPCATALOG] WHERE TABLENAME = @Table)
+		IF EXISTS (SELECT TABLENAME FROM [MAPINFO].[MAPINFO_MAPCATALOG] WHERE TABLENAME = @Table AND OWNERNAME = @Schema)
 		BEGIN
 			IF @debug = 1
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Deleting the MapInfo MapCatalog entry ...'
 			
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
-				' WHERE TABLENAME = ''' + @Table + ''''
+				' WHERE TABLENAME = ''' + @Table + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
 		END
 
@@ -106,11 +110,11 @@ BEGIN
 
 		-- Check if the table is spatial and the necessary columns are in the table (including a geometry column)
 		IF  @IsSpatial = 1
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @XColumn AND Object_ID = Object_ID(@Table))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @YColumn AND Object_ID = Object_ID(@Table))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SizeColumn AND Object_ID = Object_ID(@Table))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SpatialColumn AND Object_ID = Object_ID(@Table))
-		AND EXISTS(SELECT * FROM sys.columns WHERE user_type_id = 129 AND Object_ID = Object_ID(@Table))
+		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @XColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
+		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @YColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
+		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SizeColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
+		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SpatialColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
+		AND EXISTS(SELECT * FROM sys.columns WHERE user_type_id = 129 AND Object_ID = Object_ID(@Schema + '.' + @Table))
 		BEGIN
 
 			IF @debug = 1
@@ -135,9 +139,9 @@ BEGIN
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Inserting the MapInfo MapCatalog entry ...'
 
 			-- Check if the rendition column is in the table
-			IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'MI_STYLE' AND Object_ID = Object_ID(@Table))
+			IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'MI_STYLE' AND Object_ID = Object_ID(@Schema + '.' + @Table))
 			BEGIN
-				SET @sqlcommand = 'ALTER TABLE ' + @Table + ' ADD MI_STYLE varchar(254) NULL'
+				SET @sqlcommand = 'ALTER TABLE ' + @Schema + '.' + @Table + ' ADD MI_STYLE varchar(254) NULL'
 				EXEC (@sqlcommand)
 			END
 			

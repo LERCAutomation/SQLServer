@@ -69,7 +69,12 @@ BEGIN
 							whole polygon. 0 = polygon, 1 = centroid
 
   Created:			Nov 2012
-  Last revised: 	Jul 2018
+  Last revised:		Dec 2018
+
+ *****************  Version 12  ****************
+ Author: Andy Foy		Date: 13/12/2018
+ A. Use schema parameter when calling stored procedures
+    and user functions.
 
  *****************  Version 11  ****************
  Author: Andy Foy		Date: 13/07/2018
@@ -143,7 +148,7 @@ BEGIN
 		SET @UserId = 'temp'
 
 	DECLARE @debug int
-	Set @debug = 0
+	Set @debug = 1
 
 	If @debug = 1
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Started.'
@@ -155,9 +160,9 @@ BEGIN
 	DECLARE @DataType nvarchar(128)
 	DECLARE @DataLength int
 
-	SET @PrimaryKey = 'MI_PRINX'
-	SET @DataType = 'int'
-	SET @DataLength = NULL
+	SET @PrimaryKey = 'RecOccKey'
+	SET @DataType = 'varchar'
+	SET @DataLength = 16
 
 	DECLARE @TempTable varchar(50)
 	SET @TempTable = @SpeciesTable + '_' + @UserId
@@ -230,9 +235,10 @@ BEGIN
 			TagFound int NOT NULL
 		)
 
-		INSERT INTO #TagsTable (SurveyKey, TagFound)
-		SELECT SURVEY_KEY, dbo.AFSurveyTagFound(SURVEY_KEY, @PartnerTags)
-		FROM SURVEY
+		SET @sqlcommand = 'INSERT INTO #TagsTable (SurveyKey, TagFound) ' +
+			'SELECT SURVEY_KEY, ' + @Schema + '.AFSurveyTagFound(SURVEY_KEY, @PartnerTags) ' +
+			'FROM SURVEY'
+		EXEC (@sqlcommand)
 
 	END
 	
@@ -481,7 +487,7 @@ BEGIN
 	If EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'MAPINFO' AND TABLE_NAME = 'MAPINFO_MAPCATALOG')
 	BEGIN
 		-- Update the MapInfo MapCatalog entry
-		SET @sqlcommand = 'EXECUTE dbo.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
+		SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 		EXEC (@sqlcommand)
 	END
