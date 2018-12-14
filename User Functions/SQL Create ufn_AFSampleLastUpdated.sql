@@ -18,8 +18,8 @@ GO
   Created:	Apr 2016
 
   Last revision information:
-    $Revision: 2 $
-    $Date: 29/10/18 $
+    $Revision: 1 $
+    $Date: 19/04/16 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -35,7 +35,7 @@ CREATE FUNCTION [dbo].[AFSampleLastUpdated]
 	@Sample_Key					CHAR(16),
 	@DateType					INT
 )
-RETURNS	date
+RETURNS	smalldatetime
 
 AS
 BEGIN
@@ -74,7 +74,7 @@ BEGIN
 		IF @SER_Change	> @LastDate SET @LastDate = @SER_Change
 	END
 
-	RETURN CONVERT(date, @LastDate)
+	RETURN @LastDate
 
 END
 

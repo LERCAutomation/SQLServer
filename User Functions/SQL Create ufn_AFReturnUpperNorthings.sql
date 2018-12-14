@@ -37,7 +37,7 @@ AS
 BEGIN
 	
 	IF @Precision < @PolyMin
-		@Precision = @PolyMin
+		SET @Precision = @PolyMin
 
 	Declare @ReturnValue Int
 	SET @ReturnValue = 
