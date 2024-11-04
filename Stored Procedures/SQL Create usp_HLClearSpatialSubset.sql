@@ -2,7 +2,7 @@
   HLClearSpatialSubset is a SQL stored procedure to delete an intermediate
   SQL Server table once it is no longer required.
   
-  Copyright © 2017 Hester Lyons Consulting, 2018 Andy Foy Consulting
+  Copyright © 2017 Hester Lyons Consulting, 2018, 2024 Andy Foy Consulting
   
   This file is used by the 'DataSelector' and 'DataExtractor' tools, versions
   of which are available for MapInfo and ArcGIS.
@@ -21,7 +21,7 @@
   <http://www.gnu.org/licenses/>.
 \*===========================================================================*/
 
-USE NBNData
+USE NBNExtract
 GO
 
 SET ANSI_NULLS ON
@@ -50,7 +50,11 @@ BEGIN
 	@UserId			The userid of the user executing the selection.
 
   Created:			Aug 2017
-  Last revised:		Dec 2018
+  Last revised:		Oct 2024
+
+ *****************  Version 3  *****************
+ Author: Andy Foy		Date: 14/10/2024
+ A. Add 'WITH RESULT SETS NONE' when executing SQL.
 
  *****************  Version 2  *****************
  Author: Andy Foy		Date: 13/12/2018
@@ -73,7 +77,6 @@ BEGIN
 	DECLARE @sqlCommand nvarchar(2000)
 
 	DECLARE @TempTable varchar(50)
-
 	SET @TempTable = @SpeciesTable + '_' + @UserId
 
 	-- Drop the temporary table if it already exists
@@ -84,6 +87,7 @@ BEGIN
 
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 	END
 
 	-- If the MapInfo MapCatalog exists then update it
@@ -99,6 +103,7 @@ BEGIN
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
 				' WHERE TABLENAME = ''' + @TempTable + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 		END
 
 	END
