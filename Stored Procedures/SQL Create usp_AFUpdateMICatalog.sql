@@ -3,7 +3,7 @@
   MapInfo_MapCatalog table which is used by MapInfo when plotting spatial
   data from SQL Server.
   
-  Copyright © 2015 - 2016 Andy Foy Consulting
+  Copyright © 2016 - 2020 Andy Foy Consulting
   
   This file is used by the 'DataSelector' tool, versions of which are
   available for MapInfo and ArcGIS.
@@ -56,16 +56,27 @@ BEGIN
   Parameters:
 	@Schema			The schema for the table.
 	@Table			The name of the table containing the records.
-	@XColumn		The name of the column relating to the X coordinates.
-	@YColumn		The name of the column relating to the Y coordinates.
-	@SizeColumn		The name of the column relating to the record size.
+	@XColumn		The name of the column relating to the X coordinates
+							(no longer required).
+	@YColumn		The name of the column relating to the Y coordinates
+							(no longer required).
+	@SizeColumn		The name of the column relating to the record size
+							(no longer required).
 	@SpatialColumn	The name of the column containing the spatial geometry.
 	@CoordSystem	The coordinate system used by the spatial geometry.
 	@RecCnt			If number of records in the table.
 	@IsSpatial		If the table contains spatial data (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Dec 2018
+  Last revised:		Apr 2020
+
+ *****************  Version 4  *****************
+ Author: Andy Foy		Date: 02/04/2020
+ A. Set RenditionType to 1 to indicate row-level symbology.
+
+ *****************  Version 3  *****************
+ Author: Andy Foy		Date: 06/03/2020
+ A. Calculate extent instead of using X, Y and Size columns.
 
  *****************  Version 2  *****************
  Author: Andy Foy		Date: 13/12/2018
@@ -110,9 +121,9 @@ BEGIN
 
 		-- Check if the table is spatial and the necessary columns are in the table (including a geometry column)
 		IF  @IsSpatial = 1
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @XColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @YColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
-		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SizeColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
+--		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @XColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
+--		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @YColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
+--		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SizeColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 		AND EXISTS(SELECT * FROM sys.columns WHERE Name = @SpatialColumn AND Object_ID = Object_ID(@Schema + '.' + @Table))
 		AND EXISTS(SELECT * FROM sys.columns WHERE user_type_id = 129 AND Object_ID = Object_ID(@Schema + '.' + @Table))
 		BEGIN
@@ -121,11 +132,21 @@ BEGIN
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Determining spatial extent ...'
 
 			-- Retrieve the geometric extent values and store as variables
-			SET @sqlcommand = 'SELECT @xMin = MIN(' + @XColumn + '), ' +
-									 '@yMin = MIN(' + @YColumn + '), ' +
-									 '@xMax = MAX(' + @XColumn + ') + MAX(' + @SizeColumn + '), ' +
-									 '@yMax = MAX(' + @YColumn + ') + MAX(' + @SizeColumn + ') ' +
-									 'FROM ' + @Schema + '.' + @Table
+			SET @sqlCommand = 'WITH ENVELOPE As ( SELECT ' + @SpatialColumn + '.STEnvelope() As envelope ' +
+									'FROM ' + @Schema + '.' + @Table + ' ), ' +
+									'CORNERS As ( SELECT envelope.STPointN(1) As point FROM ENVELOPE ' +
+									'UNION ALL SELECT envelope.STPointN(3) FROM ENVELOPE ) ' +
+									'SELECT @xMin = MIN(point.STX), ' +
+									'@yMin = MIN(point.STY), ' +
+									'@xMax = MAX(point.STX), ' +
+									'@yMax = MAX(point.STY) ' +
+									'FROM CORNERS;'
+
+			--SET @sqlcommand = 'SELECT @xMin = MIN(' + @SpatialColumn + '.ST), ' +
+			--						 '@yMin = MIN(' + @YColumn + '), ' +
+			--						 '@xMax = MAX(' + @XColumn + ') + MAX(' + @SizeColumn + '), ' +
+			--						 '@yMax = MAX(' + @YColumn + ') + MAX(' + @SizeColumn + ') ' +
+			--						 'FROM ' + @Schema + '.' + @Table
 
 			SET @params =	'@xMin int OUTPUT, ' +
 							'@yMin int OUTPUT, ' +
@@ -180,7 +201,7 @@ BEGIN
 				,'Pen (1,2,0)  Brush (1,16777215,16777215)'
 				,NULL
 				,NULL
-				,NULL
+				,1
 				,'MI_STYLE'
 				,NULL
 				,@RecCnt

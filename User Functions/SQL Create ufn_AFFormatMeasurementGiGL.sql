@@ -19,8 +19,8 @@ GO
   Created:	Jul 2016
 
   Last revision information:
-    $Revision: 1 $
-    $Date: 08/07/16 $
+    $Revision: 2 $
+    $Date: 19/12/18 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -50,8 +50,9 @@ BEGIN
 
 	-- Reformat or remove some data components
 	SELECT @Data = CASE @MData
+--		WHEN 'Taxon' THEN ''
 		WHEN NULL THEN ''
-		ELSE @MData
+		ELSE REPLACE(REPLACE(@MData, CHAR(10), ''), CHAR(13), '')
 	END
 
 	-- Remove trailing full stops from the data component
@@ -63,14 +64,18 @@ BEGIN
 		WHEN 'None' THEN ''
 --		WHEN 'Count' THEN ''
 --		WHEN 'Range' THEN ''
-		ELSE @MUnit
+		ELSE REPLACE(REPLACE(@MUnit, CHAR(10), ''), CHAR(13), '')
 	END
 
 	-- Reformat or remove some qualifier components
 	SELECT @Qual = CASE @MQual
+--		WHEN 'Not specified' THEN ''
+--		WHEN 'Taxon' THEN ''
 		WHEN 'None' THEN ''
+--		WHEN 'Default' THEN ''
+--		WHEN 'Occurrence' THEN ''
 		WHEN NULL THEN ''
-		ELSE @MQual
+		ELSE REPLACE(REPLACE(@MQual, CHAR(10), ''), CHAR(13), '')
 	END
 
 	-- If the data and qualifiers are both the same
@@ -83,6 +88,11 @@ BEGIN
 	SET @Unit = LTrim(RTrim(@Unit))
 	SET @Qual = LTrim(RTrim(@Qual))
 
+	-- If the unit is not blank then prefix it with a space
+	-- to separate it from the data component
+	IF @Unit <> ''
+		SET @Unit = ' ' + @Unit
+
 	-- If the qualifier is not blank then prefix it with a space
 	-- to separate it from the unit component
 	IF @Qual <> ''
@@ -93,15 +103,15 @@ BEGIN
 	IF @DATA <> ''
 	BEGIN
 		
-		IF @Unit <> ''
-			SET @RETURNDATA = @Data + ' ' + @Unit + @Qual + '; '
-		ELSE
-			SET @RETURNDATA = @Data + @Qual + '; '
+		SET @RETURNDATA = @Data + @Unit + @Qual
+
 	END
 	ELSE
 	BEGIN
+
 		IF @Qual <> ''
-			SET @RETURNDATA = RIGHT(@Qual, LEN(@Qual) - 1) + '; '
+			SET @RETURNDATA = RIGHT(@Qual, LEN(@Qual) - 1)
+
 	END
 
 	-- Clear the return value if it doesn't

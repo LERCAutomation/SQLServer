@@ -8,7 +8,7 @@ GO
 
 /*===========================================================================*\
   Description:	
-		Return a the measurement formatted as a string as a very specific
+		Return a the measurement formatted as a string in a specific
 		way particular to TVERC's requirements.
 
   Parameters:
@@ -18,11 +18,11 @@ GO
 		@DAFORApplies				Whether the DAFOR scale applies to this
 									species type (e.g. flora not fauna).
 
-  Created:	Oct 2015
+  Created:	Jul 2016
 
   Last revision information:
-    $Revision: 1 $
-    $Date: 01/10/15 $
+    $Revision: 2 $
+    $Date: 19/12/18 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -37,7 +37,7 @@ CREATE FUNCTION [dbo].[AFFormatMeasurementTVERC]
 (
 	@MUnit varchar(40),
 	@MQual varchar(40),
-	@Mdata varchar(20),
+	@MData varchar(20),
 	@DAFORApplies char(1)
 )
 RETURNS varchar(110)
@@ -54,12 +54,13 @@ BEGIN
 
 	-- Remove leading and trailing spaces from the measurement
 	-- components
-	SET @Data = LTrim(RTrim(@Data))
-	SET @Unit = LTrim(RTrim(@Unit))
-	SET @Qual = LTrim(RTrim(@Qual))
+	SET @MData = LTrim(RTrim(@MData))
+	SET @MUnit = LTrim(RTrim(@MUnit))
+	SET @MQual = LTrim(RTrim(@MQual))
 
 	-- Reformat or remove some data components
 	SELECT @Data = CASE @MData
+--		WHEN 'Taxon' THEN ''
 		WHEN NULL THEN ''
 		WHEN 'P' THEN ''
 		WHEN 'Presence' THEN ''
@@ -82,7 +83,7 @@ BEGIN
 		WHEN 'on site' THEN ''
 		WHEN 'sev.' THEN 'Several'
 		WHEN 'several' THEN 'Several'
-		ELSE @MData
+		ELSE REPLACE(REPLACE(@MData, CHAR(10), ''), CHAR(13), '')
 	END
 
 	-- Remove trailing full stops from the data component
@@ -91,12 +92,12 @@ BEGIN
 
 	-- Reformat or remove some unit components
 	SELECT @Unit = CASE @MUnit
-		WHEN 'None'THEN ''
+		WHEN 'None' THEN ''
 		WHEN 'Count' THEN ''
 		WHEN 'Observed' THEN ''
 		WHEN 'Presence' THEN ''
 		WHEN 'Range' THEN ''
-		ELSE @MUnit
+		ELSE REPLACE(REPLACE(@MUnit, CHAR(10), ''), CHAR(13), '')
 	END
 
 	-- Reformat or remove some qualifier components
@@ -110,7 +111,7 @@ BEGIN
 	--	WHEN 'Ind' THEN ''
 		WHEN 'Ind' THEN 'Individual'
 		WHEN 'Default' THEN ''
-		ELSE REPLACE(@MQual, '/', '/ ')
+		ELSE REPLACE(REPLACE(REPLACE(@MQual, CHAR(10), ''), CHAR(13), ''), '/', '/ ')
 	END
 
 	-- If DAFOR units can apply to this species type
@@ -272,7 +273,7 @@ BEGIN
 
 	-- If the data and qualifiers are both the same
 	-- (e.g. 'Adult' and 'Adult') then clear the qualifier
-	IF UPPER(CAST(@Data as varchar)) = UPPER(@Qual)
+	IF UPPER(@Data) = UPPER(@Qual)
 		SET @Qual = ''
 
 	-- Reset the plural data flag
@@ -370,6 +371,11 @@ BEGIN
 	IF @Data LIKE '%_-%'
 		SET @Data = REPLACE(REPLACE(@Data, ' - ', ' to '), '-', ' to ')
 
+	-- If the unit is not blank then prefix it with a space
+	-- to separate it from the data component
+	IF @Unit <> ''
+		SET @Unit = ' ' + @Unit
+
 	-- If the qualifier is not blank then prefix it with a space
 	-- to separate it from the unit component
 	IF @Qual <> ''
@@ -380,15 +386,15 @@ BEGIN
 	IF @DATA <> ''
 	BEGIN
 		
-		IF @Unit <> ''
-			SET @RETURNDATA = @Data + ' ' + @Unit + @Qual + '; '
-		ELSE
-			SET @RETURNDATA = @Data + @Qual + '; '
+		SET @RETURNDATA = @Data + @Unit + @Qual
+
 	END
 	ELSE
 	BEGIN
+
 		IF @Qual <> ''
-			SET @RETURNDATA = RIGHT(@Qual, LEN(@Qual) - 1) + '; '
+			SET @RETURNDATA = RIGHT(@Qual, LEN(@Qual) - 1)
+
 	END
 
 	-- Clear the return value if it doesn't

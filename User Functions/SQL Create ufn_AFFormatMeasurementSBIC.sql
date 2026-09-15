@@ -9,7 +9,7 @@ GO
 /*===========================================================================*\
   Description:	
 		Return a the measurement formatted as a string in a specific
-		way particular to SxBRC's requirements.
+		way particular to SBIC's requirements.
 
   Parameters:
 		@MUnit						Short name for Unit.
@@ -26,12 +26,12 @@ GO
 \*===========================================================================*/
 
 -- Drop the user function if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFFormatMeasurementSxBRC')
-	DROP FUNCTION dbo.AFFormatMeasurementSxBRC
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFFormatMeasurementSBIC')
+	DROP FUNCTION dbo.AFFormatMeasurementSBIC
 GO
 
 -- Create the user function
-CREATE FUNCTION [dbo].[AFFormatMeasurementSxBRC]
+CREATE FUNCTION [dbo].[AFFormatMeasurementSBIC]
 (
 	@MUnit varchar(40),
 	@MQual varchar(40),

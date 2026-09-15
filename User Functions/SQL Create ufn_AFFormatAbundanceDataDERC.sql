@@ -19,8 +19,8 @@ GO
   Created:	Jul 2016
 
   Last revision information:
-    $Revision: 1 $
-    $Date: 08/07/16 $
+    $Revision: 2 $
+    $Date: 19/12/18 $
     $Author: AndyFoy $
 
 \*===========================================================================*/
@@ -43,7 +43,7 @@ BEGIN
 	DECLARE @Abundance  varchar(8000)
 	SET @Abundance = ''
 
-	SELECT @Abundance = @Abundance + ISNULL(dbo.AFFormatMeasurementDERC(MEASUREMENT_UNIT.SHORT_NAME, MEASUREMENT_QUALIFIER.SHORT_NAME, TAXON_OCCURRENCE_DATA.DATA), '')
+	SELECT @Abundance = @Abundance + ISNULL(dbo.AFFormatMeasurementDERC(MEASUREMENT_UNIT.SHORT_NAME, MEASUREMENT_QUALIFIER.SHORT_NAME, TAXON_OCCURRENCE_DATA.DATA), '') + '; '
 
 	FROM TAXON_OCCURRENCE_DATA
 	INNER JOIN MEASUREMENT_UNIT ON TAXON_OCCURRENCE_DATA.MEASUREMENT_UNIT_KEY = MEASUREMENT_UNIT.MEASUREMENT_UNIT_KEY
@@ -52,23 +52,13 @@ BEGIN
 
 	WHERE TAXON_OCCURRENCE_KEY = @TOCCKey and MEASUREMENT_TYPE.SHORT_NAME = 'Abundance'
  
-	ORDER BY TAXON_OCCURRENCE_DATA.DATA
+	ORDER BY TAXON_OCCURRENCE_DATA.DATA, MEASUREMENT_UNIT.SHORT_NAME, MEASUREMENT_QUALIFIER.SHORT_NAME
 
 	If LEN(@Abundance) > 0 
 	BEGIN
 		SET @ReturnString = LEFT(@Abundance, LEN(@Abundance)-1)
 	END
 
-	--If @ReturnString LIKE '0; %'
-	--	SET @ReturnString = SUBSTRING(@ReturnString, 4, 8000)
-
-	--If @ReturnString LIKE '%; 0'
-	--	SET @ReturnString = LEFT(@ReturnString, LEN(@ReturnString)-3)
-
-	--If @ReturnString LIKE '%; 0; %'
-	--	SET @ReturnString = REPLACE(@ReturnString, '; 0; ', '')
-
-	--****************************************************************************************************
 	RETURN @ReturnString
 END
 

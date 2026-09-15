@@ -11,7 +11,7 @@ GO
 		Returns a semi-colon separated string of all abundance data for a
 		given taxon occurrence.
 
-		Needs additional UDF 'AFFormatMeasurementSxBRC' to do calculations
+		Needs additional UDF 'AFFormatMeasurementSBIC' to do calculations
 
   Parameters:	
 		@TOCCKey 					The Taxon_Occurrence_Key of interest.
@@ -26,12 +26,12 @@ GO
 \*===========================================================================*/
 
 -- Drop the user function if it already exists
-if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFFormatAbundanceDataSxBRC')
-	DROP FUNCTION dbo.AFFormatAbundanceDataSxBRC
+if exists (select ROUTINE_NAME from INFORMATION_SCHEMA.ROUTINES where ROUTINE_SCHEMA = 'dbo' and ROUTINE_NAME = 'AFFormatAbundanceDataSBIC')
+	DROP FUNCTION dbo.AFFormatAbundanceDataSBIC
 GO
 
 -- Create the user function
-CREATE FUNCTION [dbo].[AFFormatAbundanceDataSxBRC]
+CREATE FUNCTION [dbo].[AFFormatAbundanceDataSBIC]
 (
 	@TOCCKey char(16)
 )
@@ -43,7 +43,7 @@ BEGIN
 	DECLARE @Abundance  varchar(8000)
 	SET @Abundance = ''
 
-	SELECT @Abundance = @Abundance + ISNULL(dbo.AFFormatMeasurementSxBRC(MEASUREMENT_UNIT.SHORT_NAME, MEASUREMENT_QUALIFIER.SHORT_NAME, TAXON_OCCURRENCE_DATA.DATA), '') + '; '
+	SELECT @Abundance = @Abundance + ISNULL(dbo.AFFormatMeasurementSBIC(MEASUREMENT_UNIT.SHORT_NAME, MEASUREMENT_QUALIFIER.SHORT_NAME, TAXON_OCCURRENCE_DATA.DATA), '') + '; '
 
 	FROM TAXON_OCCURRENCE_DATA
 	INNER JOIN MEASUREMENT_UNIT ON TAXON_OCCURRENCE_DATA.MEASUREMENT_UNIT_KEY = MEASUREMENT_UNIT.MEASUREMENT_UNIT_KEY
