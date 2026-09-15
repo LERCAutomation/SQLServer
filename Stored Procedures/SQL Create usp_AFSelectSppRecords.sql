@@ -68,7 +68,11 @@ BEGIN
 							whole polygon. 0 = polygon, 1 = centroid
 
   Created:			Nov 2012
-  Last revised:		Jan 2021
+  Last revised:		Oct 2024
+
+ *****************  Version 20  ****************
+ Author: Andy Foy		Date: 01/10/2024
+ A. Add 'WITH RESULT SETS NONE' when executing SQL.
 
  *****************  Version 19  ****************
  Author: Andy Foy		Date: 08/01/2021
@@ -209,6 +213,7 @@ BEGIN
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary table ...'
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 	END
 
 	/*---------------------------------------------------------------------------*\
@@ -220,7 +225,7 @@ BEGIN
 	DECLARE @PartnerTags varchar(254)
 
 	-- Retrieve the variables from the partner table
-	SET @sqlcommand = 'SELECT @O1 = ' + @PartnerColumn + ', ' +
+	SET @sqlcommand = 'SELECT @O1 = ' + @PartnerColumn + ',' +
 							 '@O2 = ' + @PartnerSpatialColumn + '.Reduce(1),' +
 							 '@O3 = ' + @TagsColumn +
 					  ' FROM ' + @Schema + '.' + @PartnerTable +
@@ -229,9 +234,10 @@ BEGIN
 	SET @params =	'@O1 varchar(50) OUTPUT, ' +
 					'@O2 geometry OUTPUT, ' +
 					'@O3 varchar(254) OUTPUT'
-		
+	
 	EXEC sp_executesql @sqlcommand, @params,
 		@O1 = @PartnerName OUTPUT, @O2 = @PartnerGeom OUTPUT, @O3 = @PartnerTags OUTPUT
+		WITH RESULT SETS NONE
 
 	If @PartnerName IS NULL
 	BEGIN
@@ -274,6 +280,7 @@ BEGIN
 				'SELECT SURVEY_KEY, ' + @Schema + '.AFSurveyTagFound(SURVEY_KEY, ''' + @PartnerTags + ''') ' +
 				'FROM NBNData.dbo.SURVEY'
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 
 		END
 	
@@ -313,6 +320,7 @@ BEGIN
 		EXEC sp_executesql @sqlcommand, @params,
 			@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 			@O5 = @SpatialColumn OUTPUT, @O6 = @CoordSystem OUTPUT, @O7 = @SurveyKeyColumn OUTPUT
+			WITH RESULT SETS NONE
 		
 		/*---------------------------------------------------------------------------*\
 			Report if the tables are spatially enabled
@@ -353,6 +361,7 @@ BEGIN
 			' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp' +
 			' WHERE 1=2'
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 
 		If (@SelectType = 1 OR @SelectType = 3) AND @IsSpatial = 1
 		BEGIN
@@ -375,6 +384,7 @@ BEGIN
 					SET @params = '@I1 geometry'
 					EXEC sp_executesql @sqlcommand, @params,
 						@I1 = @PartnerGeom
+						WITH RESULT SETS NONE
 
 					Set @RecCnt = @@ROWCOUNT
 		
@@ -392,6 +402,7 @@ BEGIN
 					SET @params = '@I1 geometry'
 					EXEC sp_executesql @sqlcommand, @params,
 						@I1 = @PartnerGeom
+						WITH RESULT SETS NONE
 
 					Set @RecCnt = @@ROWCOUNT
 
@@ -405,6 +416,7 @@ BEGIN
 					SET @params = '@I1 geometry'
 					EXEC sp_executesql @sqlcommand, @params,
 						@I1 = @PartnerGeom
+						WITH RESULT SETS NONE
 
 					Set @RecCnt = @RecCnt  + @@ROWCOUNT
 
@@ -420,6 +432,9 @@ BEGIN
 					' SELECT Spp.*' +
 					' FROM ' + @Schema + '.' + @SpeciesTable + ' As Spp'
 				EXEC (@sqlcommand)
+				WITH RESULT SETS NONE
+
+				Set @RecCnt = @@ROWCOUNT
 
 				Set @RecCnt = @@ROWCOUNT
 
@@ -442,6 +457,7 @@ BEGIN
 				' WHERE Tags.TagFound = 1' +
 				' AND NOT EXISTS (SELECT ' + @PrimaryKey + ' FROM ' + @Schema + '.' + @TempTable + ' Tmp WHERE Tmp.' + @PrimaryKey + ' = Spp.' + @PrimaryKey + ')'
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 
 			Set @RecCnt = @RecCnt  + @@ROWCOUNT
 
@@ -485,6 +501,7 @@ BEGIN
 			SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 	END

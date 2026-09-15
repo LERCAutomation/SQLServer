@@ -50,7 +50,11 @@ BEGIN
 	@UserId			The userid of the user executing the selection.
 
   Created:			Sep 2015
-  Last revised:		Dec 2018
+  Last revised:		Apr 2024
+
+ *****************  Version 4  *****************
+ Author: Andy Foy		Date: 23/04/2024
+ A. Add 'WITH RESULT SETS NONE' when executing SQL.
 
  *****************  Version 3  *****************
  Author: Andy Foy		Date: 13/12/2018
@@ -87,6 +91,7 @@ BEGIN
 
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 	END
 
 	-- If the MapInfo MapCatalog exists then update it
@@ -102,6 +107,7 @@ BEGIN
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
 				' WHERE TABLENAME = ''' + @TempTable + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 	END
@@ -116,6 +122,7 @@ BEGIN
 
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 	END
 
 	-- If the MapInfo MapCatalog exists then update it
@@ -131,6 +138,7 @@ BEGIN
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
 				' WHERE TABLENAME = ''' + @TempTable + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 	END
@@ -145,6 +153,7 @@ BEGIN
 
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 	END
 
 	-- If the MapInfo MapCatalog exists then update it
@@ -160,6 +169,7 @@ BEGIN
 			SET @sqlcommand = 'DELETE FROM [MAPINFO].[MAPINFO_MAPCATALOG]' +
 				' WHERE TABLENAME = ''' + @TempTable + ''' AND OWNERNAME = ''' + @Schema + ''''
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 	END

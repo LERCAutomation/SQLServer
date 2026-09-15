@@ -64,7 +64,11 @@ BEGIN
 					and polygon tables (0 = no, 1 = yes).
 
   Created:			Jun 2015
-  Last revised:		Dec 2018
+  Last revised:		Apr 2024
+
+ *****************  Version 13  ****************
+ Author: Andy Foy		Date: 23/04/2024
+ A. Add 'WITH RESULT SETS NONE' when executing SQL.
 
  *****************  Version 12  ****************
  Author: Andy Foy		Date: 13/12/2018
@@ -202,6 +206,7 @@ BEGIN
 	EXEC sp_executesql @sqlcommand, @params,
 		@O1 = @XColumn OUTPUT, @O2 = @YColumn OUTPUT, @O3 = @SizeColumn OUTPUT, @O4 = @IsSpatial OUTPUT, 
 		@O5 = @SpatialColumn OUTPUT, @O6 = @CoordSystem OUTPUT
+	WITH RESULT SETS NONE
 		
 	/*---------------------------------------------------------------------------*\
 		Prefix the SQL clause fields (if required)
@@ -234,6 +239,7 @@ BEGIN
 			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary table ...'
 		SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @TempTable
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 	END
 
 	/*---------------------------------------------------------------------------*\
@@ -252,6 +258,7 @@ BEGIN
 		@GroupByClause +
 		@OrderByClause
 	EXEC (@sqlcommand)
+	WITH RESULT SETS NONE
 
 	/*---------------------------------------------------------------------------*\
 		Report the number of records selected
@@ -263,6 +270,26 @@ BEGIN
 		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + Cast(@RecCnt As varchar) + ' records selected ...'
 
 	/*---------------------------------------------------------------------------*\
+		Report if the table is spatially enabled
+	\*---------------------------------------------------------------------------*/
+
+	-- Check if the results table (still) contains spatial data
+	SELECT @SpatialColumn = c.name FROM sys.columns c INNER JOIN sys.tables t on t.object_id = c.object_id
+		WHERE schema_name(t.schema_id) = @Schema AND t.name = @TempTable AND type_name(user_type_id) in ('geometry', 'geography')
+
+	IF @debug = 1
+		PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Spatial column is ' + @SpatialColumn
+
+	IF @SpatialColumn IS NULL
+		SET @IsSpatial = 0
+
+	If @IsSpatial = 1
+	BEGIN
+		IF @debug = 1
+			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'The results are spatial'
+	END
+
+	/*---------------------------------------------------------------------------*\
 		Update the MapInfo MapCatalog entry
 	\*---------------------------------------------------------------------------*/
 
@@ -272,20 +299,7 @@ BEGIN
 		SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @TempTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 			''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 		EXEC (@sqlcommand)
-	END
-
-	/*---------------------------------------------------------------------------*\
-		Report if the table is spatially enabled
-	\*---------------------------------------------------------------------------*/
-
-	-- Check if the results table (still) contains spatial data
-	If NOT EXISTS(SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = @TempTable AND COLUMN_NAME = @SpatialColumn)
-		SET @IsSpatial = 0
-
-	If @IsSpatial = 1
-	BEGIN
-		IF @debug = 1
-			PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'The results are spatial'
+		WITH RESULT SETS NONE
 	END
 
 	/*---------------------------------------------------------------------------*\
@@ -309,6 +323,7 @@ BEGIN
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary point table ...'
 			SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @SplitTable
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 		/*---------------------------------------------------------------------------*\
@@ -320,11 +335,12 @@ BEGIN
 
 		-- Select the result records into the points temporary table
 		SET @sqlcommand = 
-			'SELECT ' + @ColumnNames +
+			'SELECT *' +
 			' INTO ' + @Schema + '.' + @SplitTable +
 			' FROM ' + @TempTable +
 			' WHERE ' + @SpatialColumn + '.STGeometryType() LIKE ''%Point'''
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 
 		/*---------------------------------------------------------------------------*\
 			Report the number of point records selected
@@ -345,6 +361,7 @@ BEGIN
 			SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 		/*---------------------------------------------------------------------------*\
@@ -360,6 +377,7 @@ BEGIN
 				PRINT CONVERT(VARCHAR(32), CURRENT_TIMESTAMP, 109 ) + ' : ' + 'Dropping temporary polygon table ...'
 			SET @sqlcommand = 'DROP TABLE ' + @Schema + '.' + @SplitTable
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 		/*---------------------------------------------------------------------------*\
@@ -371,11 +389,12 @@ BEGIN
 
 		-- Select the result records into the polygons temporary table
 		SET @sqlcommand = 
-			'SELECT ' + @ColumnNames +
+			'SELECT *' +
 			' INTO ' + @Schema + '.' + @SplitTable +
 			' FROM ' + @TempTable +
 			' WHERE ' + @SpatialColumn + '.STGeometryType() LIKE ''%Polygon'''
 		EXEC (@sqlcommand)
+		WITH RESULT SETS NONE
 
 		/*---------------------------------------------------------------------------*\
 			Report the number of polygon records selected
@@ -396,6 +415,7 @@ BEGIN
 			SET @sqlcommand = 'EXECUTE ' + @Schema + '.AFUpdateMICatalog ''' + @Schema + ''', ''' + @SplitTable + ''', ''' + @XColumn + ''', ''' + @YColumn +
 				''', ''' + @SizeColumn + ''', ''' + @SpatialColumn + ''', ''' + @CoordSystem + ''', ''' + Cast(@RecCnt As varchar) + ''', ''' + Cast(@IsSpatial As varchar) + ''''
 			EXEC (@sqlcommand)
+			WITH RESULT SETS NONE
 		END
 
 	END
